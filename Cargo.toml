@@ -1,0 +1,8 @@
+[package]
+name = "pe-sign"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cms = { version = "0.2.3", features = ["std"] }
+der = { version = "0.7.9", features = ["derive"] }
