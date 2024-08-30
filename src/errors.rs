@@ -21,6 +21,18 @@ pub enum PeSignErrorKind {
     // 无效的签名封装内容
     InvalidSpcIndirectDataContent,
 
+    // 空的证书
+    EmptyCertificate,
+
+    // 不支持的证书格式
+    UnsupportedCertificateFormat,
+
+    // 不支持的算法
+    UnsupportedAlgorithm,
+
+    // 无效的证书拓展
+    InvalidCertificateExtension,
+
     // 未知错误
     Unknown,
 }

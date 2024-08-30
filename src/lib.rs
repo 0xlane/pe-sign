@@ -1,12 +1,14 @@
 use std::error::Error;
 
 use asn1_types::{SpcIndirectDataContent, ID_SPC_INDIRECT_DATA};
+use cert::Certificate;
 use cms::{cert::x509::der::{oid::db::rfc5911::ID_SIGNED_DATA, Decode, SliceReader}, content_info::ContentInfo, signed_data::SignedData};
 use errors::{PeSignError, PeSignErrorKind, PeSignResult};
 use utils::to_hex_str;
 
 pub mod asn1_types;
 pub mod errors;
+pub mod cert;
 mod utils;
 
 pub fn parse_pkcs7(bin: &[u8]) -> Result<(), Box<dyn Error>> {
@@ -15,6 +17,7 @@ pub fn parse_pkcs7(bin: &[u8]) -> Result<(), Box<dyn Error>> {
 
     let indata;
     let authenticode;
+    let mut certs: Vec<Certificate> = vec![];
 
     // signedData
     match ci.content_type {
@@ -41,6 +44,22 @@ pub fn parse_pkcs7(bin: &[u8]) -> Result<(), Box<dyn Error>> {
                     message: ect.to_string(),
                 }.into()),
             }
+
+            // certificates
+            let certset = signed_data.certificates.ok_or(PeSignError {
+                kind: PeSignErrorKind::EmptyCertificate,
+                message: "".to_owned(),
+            })?;
+
+            for cert_choice in certset.0.iter() {
+                match cert_choice {
+                    cms::cert::CertificateChoices::Certificate(cert) => certs.push(cert.to_owned().try_into()?),
+                    cms::cert::CertificateChoices::Other(cert) => return Err(PeSignError {
+                        kind: PeSignErrorKind::UnsupportedCertificateFormat,
+                        message: cert.other_cert_format.to_string(),
+                    }.into()),
+                }
+            }
         },
         ct => return Err(PeSignError {
             kind: PeSignErrorKind::InvalidContentType,
@@ -50,6 +69,7 @@ pub fn parse_pkcs7(bin: &[u8]) -> Result<(), Box<dyn Error>> {
 
     println!("authenticode: {}", authenticode);
     println!("indata: {:?}", indata);
+    println!("certificate({}): {:?}", certs.len(), certs);
 
     Ok(())
 }

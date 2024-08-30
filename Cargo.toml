@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 cms = { version = "0.2.3", features = ["std"] }
 der = { version = "0.7.9", features = ["derive"] }
+x509-cert = { version = "0.2.5", features = ["sct"] }
