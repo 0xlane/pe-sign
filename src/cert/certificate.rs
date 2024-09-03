@@ -1,4 +1,4 @@
-use std::{io::Read, time::Duration};
+use std::{fmt::Display, io::Read, time::Duration};
 
 use der::{
     oid::db::rfc5912::{
@@ -177,6 +177,12 @@ pub enum Algorithm {
     Unsupported(String),
 }
 
+impl Display for Algorithm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 impl From<x509_cert::spki::AlgorithmIdentifierOwned> for Algorithm {
     fn from(value: x509_cert::spki::AlgorithmIdentifierOwned) -> Self {
         // let params = match value.parameters {
@@ -221,8 +227,8 @@ impl From<x509_cert::time::Validity> for Validity {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubjectPublicKeyInfo {
-    algorithm: Algorithm,
-    subject_public_key: Vec<u8>,
+    pub algorithm: Algorithm,
+    pub subject_public_key: Vec<u8>,
 }
 
 impl TryFrom<x509_cert::spki::SubjectPublicKeyInfoOwned> for SubjectPublicKeyInfo {
