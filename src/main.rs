@@ -1,10 +1,12 @@
 use std::error::Error;
 
-use pe_sign::parse_pkcs7;
+use pe_sign::PeSign;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let bytes = include_bytes!("./examples/pkcs7.cer");
-    parse_pkcs7(bytes)?;
+    let pesign = PeSign::from_certificate_table_buf(bytes)?;
+
+    println!("{:?}", pesign);
 
     Ok(())
 }

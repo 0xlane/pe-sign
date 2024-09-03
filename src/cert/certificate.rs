@@ -1,17 +1,23 @@
-use std::time::Duration;
+use std::{io::Read, time::Duration};
 
-use der::oid::db::rfc5912::{
-    ID_SHA_1, ID_SHA_224, ID_SHA_256, ID_SHA_384, ID_SHA_512, RSA_ENCRYPTION,
-    SHA_1_WITH_RSA_ENCRYPTION, SHA_224_WITH_RSA_ENCRYPTION, SHA_256_WITH_RSA_ENCRYPTION,
-    SHA_384_WITH_RSA_ENCRYPTION, SHA_512_WITH_RSA_ENCRYPTION,
+use der::{
+    oid::db::rfc5912::{
+        ID_SHA_1, ID_SHA_224, ID_SHA_256, ID_SHA_384, ID_SHA_512, RSA_ENCRYPTION,
+        SHA_1_WITH_RSA_ENCRYPTION, SHA_224_WITH_RSA_ENCRYPTION, SHA_256_WITH_RSA_ENCRYPTION,
+        SHA_384_WITH_RSA_ENCRYPTION, SHA_512_WITH_RSA_ENCRYPTION,
+    },
+    Decode,
 };
 
 use crate::{
-    errors::{PeSignError, PeSignErrorKind},
+    errors::{PeSignError, PeSignErrorKind, PeSignResult},
     utils::TryVecInto,
 };
 
-use super::{ext::Extensions, name::RdnSequence};
+use super::{
+    ext::{Extension, Extensions},
+    name::RdnSequence,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Certificate {
@@ -24,6 +30,98 @@ pub struct Certificate {
     pub extensions: Option<Extensions>,
     pub signature_algorithm: Algorithm,
     pub signature_value: Vec<u8>,
+}
+
+impl Certificate {
+    // 从 PEM 文件导入证书
+    pub fn load_pem_chain(mut input: &[u8]) -> Result<Vec<Self>, PeSignError> {
+        fn find_boundary<T>(haystack: &[T], needle: &[T]) -> Option<usize>
+        where
+            for<'a> &'a [T]: PartialEq,
+        {
+            haystack
+                .windows(needle.len())
+                .position(|window| window == needle)
+        }
+
+        let mut certs = Vec::new();
+        let mut position: usize = 0;
+
+        let start_boundary = &b"-----BEGIN CERTIFICATE-----"[..];
+        let end_boundary = &b"-----END CERTIFICATE-----"[..];
+
+        // Strip the trailing whitespaces
+        loop {
+            if input.is_empty() {
+                break;
+            }
+            let last_pos = input.len() - 1;
+
+            match input.get(last_pos) {
+                Some(b'\r') | Some(b'\n') => {
+                    input = &input[..last_pos];
+                }
+                _ => break,
+            }
+        }
+
+        while position < input.len() - 1 {
+            let rest = &input[position..];
+            let start_pos = find_boundary(rest, start_boundary).ok_or(PeSignError {
+                kind: PeSignErrorKind::InvalidPEMCertificate,
+                message: "".to_owned(),
+            })?;
+            let end_pos = find_boundary(rest, end_boundary).ok_or(PeSignError {
+                kind: PeSignErrorKind::InvalidPEMCertificate,
+                message: "".to_owned(),
+            })? + end_boundary.len();
+
+            let cert_buf = &rest[start_pos..end_pos];
+            // println!("{}", String::from_utf8_lossy(cert_buf));
+
+            // from_pem 会报  PEM Base64 error，PEM 库使用的默认的 64，并不是动态动态判断的
+            let mut decoder = pem_rfc7468::Decoder::new_detect_wrap(cert_buf)
+                .map_app_err(PeSignErrorKind::InvalidPEMCertificate)?;
+            let mut buf = vec![];
+            decoder
+                .read_to_end(&mut buf)
+                .map_app_err(PeSignErrorKind::InvalidPEMCertificate)?;
+            let cert = x509_cert::Certificate::from_der(&buf)
+                .map_app_err(PeSignErrorKind::InvalidPEMCertificate)?
+                .try_into()?;
+
+            certs.push(cert);
+
+            position += end_pos;
+        }
+
+        Ok(certs)
+    }
+
+    // 是否是 CA 证书
+    pub fn is_ca(self: &Self) -> bool {
+        match &self.extensions {
+            Some(extensions) => {
+                match extensions.0.iter().find(|&ext| match ext {
+                    Extension::BasicConstraints(_) => true,
+                    _ => false,
+                }) {
+                    Some(Extension::BasicConstraints(basic_constraints)) => basic_constraints.ca,
+                    _ => false,
+                }
+            }
+            None => false,
+        }
+    }
+
+    // 是否是自签名证书
+    pub fn is_selfsigned(self: &Self) -> bool {
+        if self.issuer == self.subject {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl TryFrom<x509_cert::Certificate> for Certificate {
@@ -45,7 +143,7 @@ impl TryFrom<x509_cert::Certificate> for Certificate {
             })?)),
             None => None,
         };
-        let signature_algorithm = value.signature_algorithm.try_into()?;
+        let signature_algorithm = value.signature_algorithm.into();
         let signature_value = value.signature.raw_bytes().to_vec();
 
         Ok(Self {
@@ -76,12 +174,11 @@ pub enum Algorithm {
     Sha256WithRSA,
     Sha384WithRSA,
     Sha512WithRSA,
+    Unsupported(String),
 }
 
-impl TryFrom<x509_cert::spki::AlgorithmIdentifierOwned> for Algorithm {
-    type Error = PeSignError;
-
-    fn try_from(value: x509_cert::spki::AlgorithmIdentifierOwned) -> Result<Self, Self::Error> {
+impl From<x509_cert::spki::AlgorithmIdentifierOwned> for Algorithm {
+    fn from(value: x509_cert::spki::AlgorithmIdentifierOwned) -> Self {
         // let params = match value.parameters {
         //     Some(p) => match p.is_null() {
         //         true => None,
@@ -91,21 +188,18 @@ impl TryFrom<x509_cert::spki::AlgorithmIdentifierOwned> for Algorithm {
         // };
 
         match value.oid {
-            ID_SHA_1 => Ok(Self::Sha1),
-            ID_SHA_224 => Ok(Self::Sha224),
-            ID_SHA_256 => Ok(Self::Sha256),
-            ID_SHA_384 => Ok(Self::Sha384),
-            ID_SHA_512 => Ok(Self::Sha512),
-            RSA_ENCRYPTION => Ok(Self::RSA),
-            SHA_1_WITH_RSA_ENCRYPTION => Ok(Self::Sha1WithRSA),
-            SHA_224_WITH_RSA_ENCRYPTION => Ok(Self::Sha224WithRSA),
-            SHA_256_WITH_RSA_ENCRYPTION => Ok(Self::Sha256WithRSA),
-            SHA_384_WITH_RSA_ENCRYPTION => Ok(Self::Sha384WithRSA),
-            SHA_512_WITH_RSA_ENCRYPTION => Ok(Self::Sha512WithRSA),
-            oid => Err(PeSignError {
-                kind: crate::errors::PeSignErrorKind::UnsupportedAlgorithm,
-                message: oid.to_string(),
-            }),
+            ID_SHA_1 => Self::Sha1,
+            ID_SHA_224 => Self::Sha224,
+            ID_SHA_256 => Self::Sha256,
+            ID_SHA_384 => Self::Sha384,
+            ID_SHA_512 => Self::Sha512,
+            RSA_ENCRYPTION => Self::RSA,
+            SHA_1_WITH_RSA_ENCRYPTION => Self::Sha1WithRSA,
+            SHA_224_WITH_RSA_ENCRYPTION => Self::Sha224WithRSA,
+            SHA_256_WITH_RSA_ENCRYPTION => Self::Sha256WithRSA,
+            SHA_384_WITH_RSA_ENCRYPTION => Self::Sha384WithRSA,
+            SHA_512_WITH_RSA_ENCRYPTION => Self::Sha512WithRSA,
+            oid => Self::Unsupported(oid.to_string()),
         }
     }
 }
@@ -136,7 +230,7 @@ impl TryFrom<x509_cert::spki::SubjectPublicKeyInfoOwned> for SubjectPublicKeyInf
 
     fn try_from(value: x509_cert::spki::SubjectPublicKeyInfoOwned) -> Result<Self, Self::Error> {
         Ok(Self {
-            algorithm: value.algorithm.try_into()?,
+            algorithm: value.algorithm.into(),
             subject_public_key: value.subject_public_key.raw_bytes().to_vec(),
         })
     }

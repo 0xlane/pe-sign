@@ -2,7 +2,6 @@ use std::fmt;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeSignErrorKind {
-
     // 无效的证书内容
     InvalidContentInfo,
 
@@ -33,6 +32,15 @@ pub enum PeSignErrorKind {
     // 无效的证书拓展
     InvalidCertificateExtension,
 
+    // 无可信证书
+    EmptyCACerts,
+
+    // 证书链列表空
+    EmptyCertList,
+
+    // 无效的 PEM 证书
+    InvalidPEMCertificate,
+
     // 未知错误
     Unknown,
 }
@@ -58,7 +66,7 @@ pub trait PeSignResult<T> {
 
 impl<T, E> PeSignResult<T> for std::result::Result<T, E>
 where
-    E : std::error::Error + 'static
+    E: std::error::Error + 'static,
 {
     fn map_app_err(self: Self, kind: PeSignErrorKind) -> Result<T, PeSignError> {
         self.map_err(|err| PeSignError {
@@ -66,7 +74,7 @@ where
             message: err.to_string(),
         })
     }
-    
+
     fn map_unknown_err(self: Self) -> Result<T, PeSignError> {
         self.map_app_err(PeSignErrorKind::Unknown)
     }
