@@ -55,12 +55,20 @@ impl CertificateChainBuilder {
                 Self::build_chain(&mut cert_list, &mut cert_chain, 1);
 
                 // 添加 CA 证书到证书链中
-                let root_self = cert_chain.last().unwrap();
-                if let Some(ca) = trusted_ca_certs
-                    .iter()
-                    .find(|v| v.subject == root_self.issuer)
-                {
-                    cert_chain.push(ca.clone());
+                loop {
+                    let root_self = cert_chain.last().unwrap();
+                    if let Some(ca) = trusted_ca_certs
+                        .iter()
+                        .find(|v| v.subject == root_self.issuer)
+                    {
+                        cert_chain.push(ca.clone());
+
+                        if ca.is_selfsigned() {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
                 }
             }
 
