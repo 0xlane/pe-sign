@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use crate::errors::PeSignError;
 
 use super::Certificate;
@@ -146,7 +148,22 @@ impl CertificateChain {
         self.cert_chain.iter()
     }
 
+    // 返回证书链引用
     pub fn get_chain(self: &Self) -> &[Certificate] {
-        &self.cert_chain
+        &self
+    }
+}
+
+impl AsRef<[Certificate]> for CertificateChain {
+    fn as_ref(&self) -> &[Certificate] {
+        &self.cert_chain[..]
+    }
+}
+
+impl Deref for CertificateChain {
+    type Target = [Certificate];
+
+    fn deref(&self) -> &Self::Target {
+        &self.cert_chain[..]
     }
 }
