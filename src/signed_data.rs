@@ -1,4 +1,9 @@
-use der::{asn1::OctetStringRef, oid::db::rfc5912::RSA_ENCRYPTION, Decode, Encode};
+use cms::content_info::ContentInfo;
+use der::{
+    asn1::OctetStringRef,
+    oid::db::{rfc5911::ID_SIGNED_DATA, rfc5912::RSA_ENCRYPTION},
+    Decode, Encode, SliceReader,
+};
 use rsa::pkcs1::DecodeRsaPublicKey;
 
 use crate::{
@@ -315,6 +320,90 @@ impl SignedData {
             Ok(Some(cert_chain))
         } else {
             Ok(None)
+        }
+    }
+
+    // 获取微软 TST 签名
+    pub fn get_ms_tst_signature(self: &Self) -> Result<Option<SignedData>, PeSignError> {
+        match &self.signer_info.unsigned_attrs {
+            Some(unsigned_attrs) => {
+                match unsigned_attrs
+                    .0
+                    .iter()
+                    .find(|v| v.oid == "1.3.6.1.4.1.311.3.3.1")
+                {
+                    Some(ms_tst_sign_attr) => {
+                        let attr_value = &ms_tst_sign_attr.values.concat()[..];
+                        let tst_signed_data = {
+                            let mut reader = SliceReader::new(attr_value).map_unknown_err()?;
+                            let ci = ContentInfo::decode(&mut reader)
+                                .map_app_err(PeSignErrorKind::InvalidContentInfo)?;
+
+                            // signedData
+                            match ci.content_type {
+                                ID_SIGNED_DATA => ci
+                                    .content
+                                    .decode_as::<cms::signed_data::SignedData>()
+                                    .map_app_err(PeSignErrorKind::InvalidSignedData)?
+                                    .try_into()?,
+                                ct => {
+                                    return Err(PeSignError {
+                                        kind: PeSignErrorKind::InvalidContentType,
+                                        message: ct.to_string(),
+                                    }
+                                    .into());
+                                }
+                            }
+                        };
+
+                        Ok(Some(tst_signed_data))
+                    }
+                    None => Ok(None),
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    // 获取内嵌签名
+    pub fn get_nested_signature(self: &Self) -> Result<Option<SignedData>, PeSignError> {
+        match &self.signer_info.unsigned_attrs {
+            Some(unsigned_attrs) => {
+                match unsigned_attrs
+                    .0
+                    .iter()
+                    .find(|v| v.oid == "1.3.6.1.4.1.311.2.4.1")
+                {
+                    Some(nested_sign_attr) => {
+                        let attr_value = &nested_sign_attr.values.concat()[..];
+                        let nested_signed_data = {
+                            let mut reader = SliceReader::new(attr_value).map_unknown_err()?;
+                            let ci = ContentInfo::decode(&mut reader)
+                                .map_app_err(PeSignErrorKind::InvalidContentInfo)?;
+
+                            // signedData
+                            match ci.content_type {
+                                ID_SIGNED_DATA => ci
+                                    .content
+                                    .decode_as::<cms::signed_data::SignedData>()
+                                    .map_app_err(PeSignErrorKind::InvalidSignedData)?
+                                    .try_into()?,
+                                ct => {
+                                    return Err(PeSignError {
+                                        kind: PeSignErrorKind::InvalidContentType,
+                                        message: ct.to_string(),
+                                    }
+                                    .into());
+                                }
+                            }
+                        };
+
+                        Ok(Some(nested_signed_data))
+                    }
+                    None => Ok(None),
+                }
+            }
+            None => Ok(None),
         }
     }
 

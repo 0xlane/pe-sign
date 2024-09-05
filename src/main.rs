@@ -28,5 +28,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!();
     }
 
+    let nested_signed_data = pesign.signed_data.get_nested_signature()?.unwrap();
+
+    for cert in &nested_signed_data.signer_cert_chain[..] {
+        println!("subject: {}", cert.subject);
+        println!("issuer:  {}", cert.issuer);
+        println!("issuer:  {}", cert.subject_public_key_info.algorithm);
+        println!();
+    }
+
     Ok(())
 }
