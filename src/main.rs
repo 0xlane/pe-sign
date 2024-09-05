@@ -37,5 +37,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!();
     }
 
+    let trusted = nested_signed_data.signer_cert_chain.is_trusted()?;
+    println!("{}", trusted);
+    
+    let status = nested_signed_data.verify()?;
+    println!("{:?}", status);
+
     Ok(())
 }
