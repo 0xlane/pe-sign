@@ -44,6 +44,9 @@ pub enum PeSignErrorKind {
     // 无效的公钥
     InvalidPublicKey,
 
+    // 找不到签名者信息
+    NoFoundSignerInfo,
+
     // 未知签名者
     UnknownSigner,
 
