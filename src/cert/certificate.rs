@@ -6,7 +6,7 @@ use der::{
         SHA_1_WITH_RSA_ENCRYPTION, SHA_224_WITH_RSA_ENCRYPTION, SHA_256_WITH_RSA_ENCRYPTION,
         SHA_384_WITH_RSA_ENCRYPTION, SHA_512_WITH_RSA_ENCRYPTION,
     },
-    Decode,
+    Decode, Encode,
 };
 
 use crate::{
@@ -30,6 +30,7 @@ pub struct Certificate {
     pub extensions: Option<Extensions>,
     pub signature_algorithm: Algorithm,
     pub signature_value: Vec<u8>,
+    __inner_orginal_cert: x509_cert::Certificate,
 }
 
 impl Certificate {
@@ -122,12 +123,18 @@ impl Certificate {
             false
         }
     }
+
+    // 返回 tbs_certificate，用于验证证书是否可信，signature 解密后为 tbs_certificate 的 hash
+    pub fn get_tbs_certificate_bytes(self: &Self) -> Vec<u8> {
+        self.__inner_orginal_cert.tbs_certificate.to_der().unwrap()
+    }
 }
 
 impl TryFrom<x509_cert::Certificate> for Certificate {
     type Error = PeSignError;
 
     fn try_from(value: x509_cert::Certificate) -> Result<Self, Self::Error> {
+        let __inner_orginal_cert = value.clone();
         let version = value.tbs_certificate.version as u8;
         let serial_number = value.tbs_certificate.serial_number.as_bytes().to_vec();
         let issuer = value.tbs_certificate.issuer.into();
@@ -156,6 +163,7 @@ impl TryFrom<x509_cert::Certificate> for Certificate {
             extensions,
             signature_algorithm,
             signature_value,
+            __inner_orginal_cert,
         })
     }
 }

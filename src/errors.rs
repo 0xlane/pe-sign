@@ -41,6 +41,15 @@ pub enum PeSignErrorKind {
     // 无效的 PEM 证书
     InvalidPEMCertificate,
 
+    // 无效的公钥
+    InvalidPublicKey,
+
+    // 未知签名者
+    UnknownSigner,
+
+    // 不存在消息摘要
+    NoFoundMessageDigest,
+
     // 未知错误
     Unknown,
 }

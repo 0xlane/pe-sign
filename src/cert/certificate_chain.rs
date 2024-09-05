@@ -1,8 +1,11 @@
 use std::ops::Deref;
 
-use crate::errors::PeSignError;
+use rsa::{pkcs1::DecodeRsaPublicKey, Pkcs1v15Sign};
+use sha1::{Digest, Sha1};
 
-use super::Certificate;
+use crate::errors::{PeSignError, PeSignErrorKind, PeSignResult};
+
+use super::{Algorithm, Certificate};
 
 // 证书链构建器
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -165,5 +168,63 @@ impl Deref for CertificateChain {
 
     fn deref(&self) -> &Self::Target {
         &self.cert_chain[..]
+    }
+}
+
+impl CertificateChain {
+    // 验证证书链是否可信
+    pub fn is_trusted(self: &Self) -> Result<bool, PeSignError> {
+        if self.cert_chain.len() < 2 {
+            // 小于2个证书直接判定为不可信
+            return Ok(false);
+        }
+
+        // 如果顶级证书不是来自于可信CA，直接判定为不可信
+        let root_cert = self.cert_chain.last().unwrap();
+        if self
+            .trusted_ca_certs
+            .iter()
+            .find(|v| *v == root_cert)
+            .is_none()
+        {
+            return Ok(false);
+        }
+
+        // 验证证书链
+        for (index, subject_cert) in self.cert_chain.iter().enumerate() {
+            if subject_cert.is_selfsigned() {
+                break;
+            }
+
+            if let Some(issuer_cert) = self.cert_chain.get(index + 1) {
+                if issuer_cert.subject_public_key_info.algorithm != Algorithm::RSA {
+                    return Err(PeSignError {
+                        kind: PeSignErrorKind::UnsupportedAlgorithm,
+                        message: issuer_cert.subject_public_key_info.algorithm.to_string(),
+                    });
+                }
+
+                // 使用颁发者的公钥验签
+                let publickey = &issuer_cert.subject_public_key_info.subject_public_key[..];
+                let signature = &subject_cert.signature_value[..];
+
+                let rsa_publickey = rsa::RsaPublicKey::from_pkcs1_der(publickey)
+                    .map_app_err(PeSignErrorKind::InvalidPublicKey)?;
+
+                // 使用父证书的公钥验证签名，签名数据解密后里面有 tbs_certificate 内容的 hash，证书所有关键信息都在 tbs_certificate 里
+                let mut hasher = Sha1::new();
+                hasher.update(subject_cert.get_tbs_certificate_bytes());
+                let hashed = hasher.finalize();
+
+                match rsa_publickey.verify(Pkcs1v15Sign::new::<Sha1>(), &hashed, signature) {
+                    Ok(()) => { /*Validated*/ }
+                    Err(_) => return Ok(false),
+                }
+            } else {
+                break;
+            }
+        }
+        // 证书可信后，拿到证书的公钥，解密 SignerInfo->encryptedDigest，得到 authenticatedAttributes 内容的 hash，没有 authenticatedAttributes 则为 content 内容 hash
+        Ok(true)
     }
 }
