@@ -18,6 +18,7 @@ pub struct SignerInfo {
     pub signed_attrs: Option<Attributes>, // authenticatedAttributes
     pub unsigned_attrs: Option<Attributes>, // unauthenticatedAttributes
     pub signature: Vec<u8>,               // encryptedDigest
+    pub digest_alg: Algorithm,            // digestAlgorithm
 }
 
 impl TryFrom<cms::signed_data::SignerInfo> for SignerInfo {
@@ -42,11 +43,13 @@ impl TryFrom<cms::signed_data::SignerInfo> for SignerInfo {
             });
         }
         let signature = signer_info.signature.as_bytes().to_vec();
+        let digest_alg = signer_info.digest_alg.into();
 
         Ok(Self {
             signed_attrs,
             unsigned_attrs,
             signature,
+            digest_alg,
         })
     }
 }
@@ -230,7 +233,7 @@ impl SignedData {
         match &self.signer_info.signed_attrs {
             // 如果存在 signed_attrs，使用 signature 和 publickey 对 signed_attrs 验签
             Some(signed_attrs) => {
-                let mut hasher = Sha1::new();
+                let mut hasher = self.signer_info.digest_alg.new_digest()?;
                 hasher.update(&signed_attrs.to_der()?);
                 let hashed = hasher.finalize();
 

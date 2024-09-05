@@ -8,6 +8,9 @@ use der::{
     },
     Decode, Encode,
 };
+use digest::{Digest, DynDigest};
+use sha1::Sha1;
+use sha2::{Sha224, Sha256, Sha384, Sha512};
 
 use crate::{
     errors::{PeSignError, PeSignErrorKind, PeSignResult},
@@ -214,6 +217,22 @@ impl From<x509_cert::spki::AlgorithmIdentifierOwned> for Algorithm {
             SHA_384_WITH_RSA_ENCRYPTION => Self::Sha384WithRSA,
             SHA_512_WITH_RSA_ENCRYPTION => Self::Sha512WithRSA,
             oid => Self::Unsupported(oid.to_string()),
+        }
+    }
+}
+
+impl Algorithm {
+    pub fn new_digest(self: &Self) -> Result<Box<dyn DynDigest>, PeSignError> {
+        match self {
+            Algorithm::Sha1 => Ok(Sha1::new().box_clone()),
+            Algorithm::Sha224 => Ok(Sha224::new().box_clone()),
+            Algorithm::Sha256 => Ok(Sha256::new().box_clone()),
+            Algorithm::Sha384 => Ok(Sha384::new().box_clone()),
+            Algorithm::Sha512 => Ok(Sha512::new().box_clone()),
+            _ => Err(PeSignError {
+                kind: PeSignErrorKind::UnsupportedAlgorithm,
+                message: format!("digest: {}", self),
+            }),
         }
     }
 }

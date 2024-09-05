@@ -1,4 +1,5 @@
 use asn1_types::SpcIndirectDataContent;
+use cert::Algorithm;
 use cms::{
     cert::x509::der::{oid::db::rfc5911::ID_SIGNED_DATA, Decode, SliceReader},
     content_info::ContentInfo,
@@ -18,6 +19,7 @@ pub mod utils;
 pub struct PeSign {
     pub signed_data: SignedData,
     pub authenticode: String,
+    pub authenticode_digest: Algorithm,
 }
 
 impl PeSign {
@@ -44,9 +46,12 @@ impl PeSign {
                         .map_app_err(PeSignErrorKind::InvalidSpcIndirectDataContent)?;
                         let authenticode =
                             to_hex_str(spc_indirect_data_content.message_digest.digest.as_bytes());
+                        let authenticode_digest =
+                            spc_indirect_data_content.message_digest.algorithm.into();
                         Ok(Self {
                             signed_data,
                             authenticode,
+                            authenticode_digest,
                         })
                     }
                     _ => Err(PeSignError {
