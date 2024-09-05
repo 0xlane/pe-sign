@@ -53,6 +53,9 @@ pub enum PeSignErrorKind {
     // 不存在消息摘要
     NoFoundMessageDigest,
 
+    // 无效的副署签名
+    InvalidCounterSignature,
+
     // 未知错误
     Unknown,
 }

@@ -19,5 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let status = pesign.verify()?;
     println!("{:?}", status);
 
+    println!("{:?}", pesign.get_countersignature()?.unwrap().signature);
+
     Ok(())
 }
