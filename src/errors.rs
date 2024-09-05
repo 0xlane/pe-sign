@@ -32,11 +32,8 @@ pub enum PeSignErrorKind {
     // 无效的证书拓展
     InvalidCertificateExtension,
 
-    // 无可信证书
-    EmptyCACerts,
-
-    // 证书链列表空
-    EmptyCertList,
+    // 错误的证书链构建参数
+    WrongCertChainBuildParam,
 
     // 无效的 PEM 证书
     InvalidPEMCertificate,

@@ -2,6 +2,8 @@ use std::fmt::Display;
 
 use crate::utils::VecInto;
 
+pub type Name = RdnSequence;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RdnSequence(pub Vec<RelativeDistinguishedName>);
 

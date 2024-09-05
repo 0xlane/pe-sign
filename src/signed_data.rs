@@ -1,20 +1,38 @@
-use cms::signed_data::SignerIdentifier;
 use der::{asn1::OctetStringRef, oid::db::rfc5912::RSA_ENCRYPTION, Decode, Encode};
 use rsa::{pkcs1::DecodeRsaPublicKey, Pkcs1v15Sign};
 use sha1::{Digest, Sha1};
 
 use crate::{
     cert::{
-        ext::Extension, name::RdnSequence, Algorithm, Certificate, CertificateChain,
-        CertificateChainBuilder,
+        ext::SubjectKeyIdentifier, Algorithm, Certificate, CertificateChain,
+        CertificateChainBuilder, IssuerAndSerialNumber,
     },
     errors::{PeSignError, PeSignErrorKind, PeSignResult},
-    utils::to_hex_str,
     Attributes, PeSignStatus,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SignerIdentifier {
+    IssuerAndSerialNumber(IssuerAndSerialNumber),
+    SubjectKeyIdentifier(SubjectKeyIdentifier),
+}
+
+impl From<cms::signed_data::SignerIdentifier> for SignerIdentifier {
+    fn from(value: cms::signed_data::SignerIdentifier) -> Self {
+        match value {
+            cms::signed_data::SignerIdentifier::IssuerAndSerialNumber(ias) => {
+                Self::IssuerAndSerialNumber(ias.into())
+            }
+            cms::signed_data::SignerIdentifier::SubjectKeyIdentifier(skid) => {
+                Self::SubjectKeyIdentifier(skid.into())
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SignerInfo {
+    pub sid: SignerIdentifier,
     pub signed_attrs: Option<Attributes>, // authenticatedAttributes
     pub unsigned_attrs: Option<Attributes>, // unauthenticatedAttributes
     pub signature: Vec<u8>,               // encryptedDigest
@@ -25,6 +43,8 @@ impl TryFrom<cms::signed_data::SignerInfo> for SignerInfo {
     type Error = PeSignError;
 
     fn try_from(signer_info: cms::signed_data::SignerInfo) -> Result<Self, Self::Error> {
+        // sid
+        let sid = signer_info.sid.into();
         // signed attrs/auth attrs
         let signed_attrs = match signer_info.signed_attrs {
             Some(original_signed_attrs) => Some(original_signed_attrs.try_into()?),
@@ -46,6 +66,7 @@ impl TryFrom<cms::signed_data::SignerInfo> for SignerInfo {
         let digest_alg = signer_info.digest_alg.into();
 
         Ok(Self {
+            sid,
             signed_attrs,
             unsigned_attrs,
             signature,
@@ -88,7 +109,7 @@ pub struct SignedData {
     pub encap_content_info: EncapsulatedContentInfo, // messageDigest
     pub signer_info: SignerInfo,                     // signerInfo
     pub signer_cert_chain: CertificateChain,         // signer_cert
-    pub other_cert_chains: Vec<CertificateChain>,    // other cert
+    pub cert_list: Vec<Certificate>,                 // cert list
 }
 
 impl TryFrom<cms::signed_data::SignedData> for SignedData {
@@ -123,89 +144,38 @@ impl TryFrom<cms::signed_data::SignedData> for SignedData {
             }
         }
 
-        // certificate chains
-        let cert_chains = Self::build_certificate_chains(&cert_list)?;
+        // signer info
+        let signer_info: SignerInfo = signer_info.clone().try_into()?;
 
         // signer certificate chain
-        let mut signer_cert_chain = None;
-        let mut other_cert_chains = vec![];
-        match &signer_info.sid {
-            SignerIdentifier::IssuerAndSerialNumber(sid) => {
-                let signer_issuer: RdnSequence = sid.issuer.clone().into();
-                let signer_sn = sid.serial_number.as_bytes();
-                for chain in &cert_chains {
-                    if chain[0].issuer == signer_issuer && chain[0].serial_number == signer_sn {
-                        signer_cert_chain = Some(chain.clone());
-                        continue;
-                    }
-
-                    other_cert_chains.push(chain.clone());
-                }
-
-                if signer_cert_chain.is_none() {
-                    return Err(PeSignError {
-                        kind: PeSignErrorKind::UnknownSigner,
-                        message: format!("RDN: {}, SN: {}", signer_issuer, to_hex_str(signer_sn)),
-                    });
-                }
-            }
-            SignerIdentifier::SubjectKeyIdentifier(sid) => {
-                for chain in &cert_chains {
-                    if signer_cert_chain.is_none() {
-                        match &chain[0].extensions {
-                            Some(exts) => {
-                                for ext in &exts.0 {
-                                    match ext {
-                                        Extension::SubjectKeyIdentifier(cert_skid) => {
-                                            if *cert_skid == sid.clone().into() {
-                                                signer_cert_chain = Some(chain.clone());
-                                                continue;
-                                            }
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-                            None => {}
-                        }
-                    }
-
-                    other_cert_chains.push(chain.clone());
-                }
-
-                if signer_cert_chain.is_none() {
-                    return Err(PeSignError {
-                        kind: PeSignErrorKind::UnknownSigner,
-                        message: to_hex_str(sid.0.as_bytes()),
-                    });
-                }
-            }
-        }
+        let signer_cert_chain = Self::build_certificate_chain(&cert_list, &signer_info)?;
 
         Ok(Self {
             encap_content_info,
-            signer_info: signer_info.clone().try_into()?,
-            signer_cert_chain: signer_cert_chain.unwrap(),
-            other_cert_chains,
+            signer_info,
+            signer_cert_chain,
+            cert_list,
         })
     }
 }
 
 impl SignedData {
     // 获取证书链
-    pub fn build_certificate_chains(
+    pub fn build_certificate_chain(
         cert_list: &[Certificate],
-    ) -> Result<Vec<CertificateChain>, PeSignError> {
+        signer_info: &SignerInfo,
+    ) -> Result<CertificateChain, PeSignError> {
         // 加载 cacert.pem 中的 CA 证书
         let cacerts: Vec<Certificate> = Certificate::load_pem_chain(include_bytes!("cacert.pem"))?;
 
         // 构建证书建
-        let cert_chains = CertificateChainBuilder::new()
+        let cert_chain = CertificateChainBuilder::new()
             .set_trusted_ca_certs(&cacerts)
             .set_cert_list(cert_list)
+            .set_sid(signer_info.sid.clone())
             .build()?;
 
-        Ok(cert_chains)
+        Ok(cert_chain)
     }
 
     // 验证签名有效性
