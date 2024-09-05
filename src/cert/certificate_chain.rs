@@ -161,6 +161,11 @@ impl CertificateChain {
     pub fn get_chain(self: &Self) -> &[Certificate] {
         &self
     }
+
+    // 返回可信证书列表
+    pub fn get_trusted_ca_list(self: &Self) -> &[Certificate] {
+        &self.trusted_ca_certs
+    }
 }
 
 impl AsRef<[Certificate]> for CertificateChain {

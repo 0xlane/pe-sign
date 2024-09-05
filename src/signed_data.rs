@@ -300,6 +300,24 @@ impl SignedData {
         }
     }
 
+    // 构建副署签名证书链
+    pub fn build_contersignature_cert_chain(
+        self: &Self,
+    ) -> Result<Option<CertificateChain>, PeSignError> {
+        if let Some(cs_signer_info) = self.get_countersignature()? {
+            // 构建证书建
+            let cert_chain = CertificateChainBuilder::new()
+                .set_trusted_ca_certs(self.signer_cert_chain.get_trusted_ca_list())
+                .set_cert_list(&self.cert_list)
+                .set_sid(cs_signer_info.sid.clone())
+                .build()?;
+
+            Ok(Some(cert_chain))
+        } else {
+            Ok(None)
+        }
+    }
+
     // 验证签名有效性
     pub fn verify(self: &Self) -> Result<PeSignStatus, PeSignError> {
         self.signer_info.verify(

@@ -19,7 +19,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let status = pesign.verify()?;
     println!("{:?}", status);
 
-    println!("{:?}", pesign.get_countersignature()?.unwrap().signature);
+    let cs_cert_chain = pesign.signed_data.build_contersignature_cert_chain()?.unwrap();
+
+    for cert in &cs_cert_chain[..] {
+        println!("subject: {}", cert.subject);
+        println!("issuer:  {}", cert.issuer);
+        println!("issuer:  {}", cert.subject_public_key_info.algorithm);
+        println!();
+    }
 
     Ok(())
 }
