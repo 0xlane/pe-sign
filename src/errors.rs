@@ -53,6 +53,15 @@ pub enum PeSignErrorKind {
     // 无效的副署签名
     InvalidCounterSignature,
 
+    // 无效的签名时间
+    InvalidSigningTime,
+
+    // 找不到签名时间
+    NoFoundSigningTime,
+
+    // 无效的TSTInfo
+    InvalidTSTInfo,
+
     // 未知错误
     Unknown,
 }

@@ -1,4 +1,6 @@
-use cms::content_info::ContentInfo;
+use std::time::Duration;
+
+use cms::{attr::SigningTime, content_info::ContentInfo};
 use der::{
     asn1::OctetStringRef,
     oid::db::{rfc5911::ID_SIGNED_DATA, rfc5912::RSA_ENCRYPTION},
@@ -6,6 +8,7 @@ use der::{
 };
 use rsa::pkcs1::DecodeRsaPublicKey;
 
+use super::tstinfo::TSTInfo;
 use crate::{
     cert::{
         ext::SubjectKeyIdentifier, Algorithm, Certificate, CertificateChain,
@@ -405,6 +408,74 @@ impl SignedData {
             }
             None => Ok(None),
         }
+    }
+
+    // 得到签名时间
+    pub fn get_signature_time(self: &Self) -> Result<Duration, PeSignError> {
+        fn get_signing_time_from_attr(
+            signed_attrs: &Option<Attributes>,
+        ) -> Result<Option<Duration>, PeSignError> {
+            if let Some(signing_time_attr) = match signed_attrs {
+                Some(signed_attrs) => signed_attrs
+                    .0
+                    .iter()
+                    .find(|v| v.oid == "1.2.840.113549.1.9.5"), // signingTime attr
+                None => None,
+            } {
+                let attr_value = signing_time_attr.values.concat();
+                match SigningTime::from_der(&attr_value)
+                    .map_app_err(PeSignErrorKind::InvalidSigningTime)?
+                {
+                    x509_cert::time::Time::UtcTime(time) => Ok(Some(time.to_unix_duration())),
+                    x509_cert::time::Time::GeneralTime(time) => Ok(Some(time.to_unix_duration())),
+                }
+            } else {
+                Ok(None)
+            }
+        }
+
+        let signing_time = match get_signing_time_from_attr(&self.signer_info.signed_attrs)? {
+            Some(signing_time) => Some(signing_time),
+            None => {
+                match self.get_countersignature()? {
+                    Some(cs_signer_info) => {
+                        match get_signing_time_from_attr(&cs_signer_info.signed_attrs)? {
+                            Some(signing_time) => Some(signing_time),
+                            None => None,
+                        }
+                    }
+                    None => {
+                        match self.get_ms_tst_signature()? {
+                            Some(ms_tst_signature) => match get_signing_time_from_attr(
+                                &ms_tst_signature.signer_info.signed_attrs,
+                            )? {
+                                Some(signing_time) => Some(signing_time),
+                                None => {
+                                    match ms_tst_signature.encap_content_info.econtent_type.as_str()
+                                    {
+                                        "1.2.840.113549.1.9.16.1.4" => {
+                                            // id-smime-ct-TSTInfo
+                                            let x = TSTInfo::from_der(
+                                                &ms_tst_signature.encap_content_info.econtent_value,
+                                            )
+                                            .map_app_err(PeSignErrorKind::InvalidTSTInfo)?;
+                                            Some(x.gen_time.to_unix_duration())
+                                        }
+                                        _ => None,
+                                    }
+                                }
+                            },
+                            None => None,
+                        }
+                    }
+                }
+            }
+        };
+
+        Ok(signing_time.ok_or(PeSignError {
+            kind: PeSignErrorKind::NoFoundSigningTime,
+            message: "".to_owned(),
+        })?)
     }
 
     // 验证签名有效性

@@ -6,13 +6,14 @@ use cms::{
 };
 use der::{asn1::SetOfVec, Encode};
 use errors::{PeSignError, PeSignErrorKind, PeSignResult};
-use signed_data::{SignedData, SignerInfo};
+use signed_data::SignedData;
 use utils::{to_hex_str, TryVecInto};
 
 pub mod asn1_types;
 pub mod cert;
 pub mod errors;
 pub mod signed_data;
+pub mod tstinfo;
 pub mod utils;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -71,30 +72,6 @@ impl PeSign {
     // 验证证书是否有效
     pub fn verify(self: &Self) -> Result<PeSignStatus, PeSignError> {
         self.signed_data.verify()
-    }
-
-    // 从签名属性中获取副署签名信息
-    pub fn get_countersignature(self: &Self) -> Result<Option<SignerInfo>, PeSignError> {
-        let signer_info = &self.signed_data.signer_info;
-        match &signer_info.unsigned_attrs {
-            Some(unsigned_attrs) => {
-                match unsigned_attrs
-                    .0
-                    .iter()
-                    .find(|v| v.oid == "1.2.840.113549.1.9.6")
-                {
-                    Some(countersignature_attr) => {
-                        let attr_value = countersignature_attr.values.concat();
-                        let cs_signer_info = cms::signed_data::SignerInfo::from_der(&attr_value)
-                            .map_app_err(PeSignErrorKind::InvalidCounterSignature)?;
-
-                        Ok(Some(cs_signer_info.try_into()?))
-                    }
-                    None => Ok(None),
-                }
-            }
-            None => Ok(None),
-        }
     }
 }
 
@@ -203,6 +180,57 @@ mod tests {
         assert_eq!(
             pesign.authenticode,
             "9253a6f72ee0e3970d5457e0f061fdb40b484f18"
+        );
+    }
+
+    #[test]
+    fn get_cert_signature_data() {
+        let bytes = include_bytes!("./examples/pkcs7.cer");
+        let pesign = PeSign::from_certificate_table_buf(bytes).unwrap();
+
+        let signature_value = &pesign.signed_data.signer_cert_chain[0].signature_value[..];
+        let signature_bin = include_bytes!("./examples/signature.bin");
+
+        assert_eq!(signature_value, signature_bin);
+    }
+
+    #[test]
+    fn parse_signingtime_from_cs() {
+        let bytes = include_bytes!("./examples/pkcs7.cer");
+        let pesign = PeSign::from_certificate_table_buf(bytes).unwrap();
+
+        assert_eq!(
+            pesign.signed_data.get_signature_time().unwrap().as_secs(),
+            1459215302
+        );
+    }
+
+    #[test]
+    fn parse_signingtime_from_ms_tst_sign() {
+        let bytes = include_bytes!("./examples/pkcs7.cer");
+        let pesign = PeSign::from_certificate_table_buf(bytes).unwrap();
+
+        assert_eq!(
+            pesign
+                .signed_data
+                .get_nested_signature()
+                .unwrap()
+                .unwrap()
+                .get_signature_time()
+                .unwrap()
+                .as_secs(),
+            1459215303
+        );
+    }
+
+    #[test]
+    fn parse_signingtime_from_attr() {
+        let bytes = include_bytes!("./examples/pkcs7_with_signing_time.cer");
+        let pesign = PeSign::from_certificate_table_buf(bytes).unwrap();
+
+        assert_eq!(
+            pesign.signed_data.get_signature_time().unwrap().as_secs(),
+            1717347664
         );
     }
 }
