@@ -9,6 +9,7 @@ use der::{
     Decode, Encode,
 };
 use digest::{Digest, DynDigest};
+use rsa::Pkcs1v15Sign;
 use sha1::Sha1;
 use sha2::{Sha224, Sha256, Sha384, Sha512};
 
@@ -224,14 +225,28 @@ impl From<x509_cert::spki::AlgorithmIdentifierOwned> for Algorithm {
 impl Algorithm {
     pub fn new_digest(self: &Self) -> Result<Box<dyn DynDigest>, PeSignError> {
         match self {
-            Algorithm::Sha1 => Ok(Sha1::new().box_clone()),
-            Algorithm::Sha224 => Ok(Sha224::new().box_clone()),
-            Algorithm::Sha256 => Ok(Sha256::new().box_clone()),
-            Algorithm::Sha384 => Ok(Sha384::new().box_clone()),
-            Algorithm::Sha512 => Ok(Sha512::new().box_clone()),
+            Algorithm::Sha1 | Algorithm::Sha1WithRSA => Ok(Sha1::new().box_clone()),
+            Algorithm::Sha224 | Algorithm::Sha224WithRSA => Ok(Sha224::new().box_clone()),
+            Algorithm::Sha256 | Algorithm::Sha256WithRSA => Ok(Sha256::new().box_clone()),
+            Algorithm::Sha384 | Algorithm::Sha384WithRSA => Ok(Sha384::new().box_clone()),
+            Algorithm::Sha512 | Algorithm::Sha512WithRSA => Ok(Sha512::new().box_clone()),
             _ => Err(PeSignError {
                 kind: PeSignErrorKind::UnsupportedAlgorithm,
                 message: format!("digest: {}", self),
+            }),
+        }
+    }
+
+    pub fn new_pkcs1v15sign(self: &Self) -> Result<Pkcs1v15Sign, PeSignError> {
+        match self {
+            Algorithm::Sha1 | Algorithm::Sha1WithRSA  => Ok(Pkcs1v15Sign::new::<Sha1>()),
+            Algorithm::Sha224 | Algorithm::Sha224WithRSA => Ok(Pkcs1v15Sign::new::<Sha224>()),
+            Algorithm::Sha256 | Algorithm::Sha256WithRSA => Ok(Pkcs1v15Sign::new::<Sha256>()),
+            Algorithm::Sha384 | Algorithm::Sha384WithRSA => Ok(Pkcs1v15Sign::new::<Sha384>()),
+            Algorithm::Sha512 | Algorithm::Sha512WithRSA => Ok(Pkcs1v15Sign::new::<Sha512>()),
+            _ => Err(PeSignError {
+                kind: PeSignErrorKind::UnsupportedAlgorithm,
+                message: format!("pkcs1v15sign: {}", self),
             }),
         }
     }

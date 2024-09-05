@@ -1,6 +1,5 @@
 use der::{asn1::OctetStringRef, oid::db::rfc5912::RSA_ENCRYPTION, Decode, Encode};
-use rsa::{pkcs1::DecodeRsaPublicKey, Pkcs1v15Sign};
-use sha1::{Digest, Sha1};
+use rsa::pkcs1::DecodeRsaPublicKey;
 
 use crate::{
     cert::{
@@ -72,6 +71,105 @@ impl TryFrom<cms::signed_data::SignerInfo> for SignerInfo {
             signature,
             digest_alg,
         })
+    }
+}
+
+impl SignerInfo {
+    pub fn verify(
+        self: &Self,
+        cert_chain: &CertificateChain,
+        indata: &[u8],
+    ) -> Result<PeSignStatus, PeSignError> {
+        // 验证证书链是否可信
+        if !cert_chain.is_trusted()? {
+            return Ok(PeSignStatus::UntrustedCertificateChain);
+        }
+
+        // 从签名者证书中获取到公钥
+        let signer_cert = &cert_chain[0];
+        let publickey = &signer_cert.subject_public_key_info.subject_public_key;
+
+        if signer_cert.subject_public_key_info.algorithm != Algorithm::RSA {
+            return Err(PeSignError {
+                kind: PeSignErrorKind::UnsupportedAlgorithm,
+                message: signer_cert.subject_public_key_info.algorithm.to_string(),
+            });
+        }
+
+        let rsa_publickey = rsa::RsaPublicKey::from_pkcs1_der(publickey)
+            .map_app_err(PeSignErrorKind::InvalidPublicKey)?;
+        let signature = &self.signature;
+
+        match &self.signed_attrs {
+            // 如果存在 signed_attrs，使用 signature 和 publickey 对 signed_attrs 验签
+            Some(signed_attrs) => {
+                let mut hasher = signer_cert.signature_algorithm.new_digest()?;
+                hasher.update(&signed_attrs.to_der()?);
+                let hashed = hasher.finalize();
+
+                match rsa_publickey.verify(
+                    signer_cert.signature_algorithm.new_pkcs1v15sign()?,
+                    &hashed,
+                    signature,
+                ) {
+                    Ok(()) => { /*Validated*/ }
+                    Err(_) => return Ok(PeSignStatus::Invalid),
+                }
+
+                // message digest
+                match signed_attrs
+                    .0
+                    .iter()
+                    .find(|v| v.oid == "1.2.840.113549.1.9.4")
+                {
+                    Some(message_digest_attr) => match message_digest_attr.values.get(0) {
+                        Some(message_digest_octet_string) => {
+                            let octet_string =
+                                OctetStringRef::from_der(&message_digest_octet_string)
+                                    .map_unknown_err()?;
+                            let message_digest = octet_string.as_bytes();
+
+                            let mut hasher = self.digest_alg.new_digest()?;
+                            hasher.update(indata);
+                            let hashed = hasher.finalize().to_vec();
+
+                            if hashed != message_digest {
+                                return Ok(PeSignStatus::Invalid);
+                            }
+                        }
+                        None => {
+                            return Err(PeSignError {
+                                kind: PeSignErrorKind::NoFoundMessageDigest,
+                                message: "".to_owned(),
+                            });
+                        }
+                    },
+                    None => {
+                        return Err(PeSignError {
+                            kind: PeSignErrorKind::NoFoundMessageDigest,
+                            message: "".to_owned(),
+                        });
+                    }
+                }
+            }
+            // 如果不存在 signed_attrs，使用 signature 和 publickey 对 content 验签
+            None => {
+                let mut hasher = self.digest_alg.new_digest()?;
+                hasher.update(indata);
+                let hashed = hasher.finalize();
+
+                match rsa_publickey.verify(
+                    signer_cert.signature_algorithm.new_pkcs1v15sign()?,
+                    &hashed,
+                    signature,
+                ) {
+                    Ok(()) => { /*Validated*/ }
+                    Err(_) => return Ok(PeSignStatus::Invalid),
+                }
+            }
+        }
+
+        Ok(PeSignStatus::Valid)
     }
 }
 
@@ -178,89 +276,35 @@ impl SignedData {
         Ok(cert_chain)
     }
 
-    // 验证签名有效性
-    pub fn verify(self: &Self) -> Result<PeSignStatus, PeSignError> {
-        // 验证证书链是否可信
-        if !self.signer_cert_chain.is_trusted()? {
-            return Ok(PeSignStatus::UntrustedCertificateChain);
-        }
-
-        // 从签名者证书中获取到公钥
-        let signer_cert = &self.signer_cert_chain[0];
-        let publickey = &signer_cert.subject_public_key_info.subject_public_key;
-
-        if signer_cert.subject_public_key_info.algorithm != Algorithm::RSA {
-            return Err(PeSignError {
-                kind: PeSignErrorKind::UnsupportedAlgorithm,
-                message: signer_cert.subject_public_key_info.algorithm.to_string(),
-            });
-        }
-
-        let rsa_publickey = rsa::RsaPublicKey::from_pkcs1_der(publickey)
-            .map_app_err(PeSignErrorKind::InvalidPublicKey)?;
-        let signature = &self.signer_info.signature;
-
-        match &self.signer_info.signed_attrs {
-            // 如果存在 signed_attrs，使用 signature 和 publickey 对 signed_attrs 验签
-            Some(signed_attrs) => {
-                let mut hasher = self.signer_info.digest_alg.new_digest()?;
-                hasher.update(&signed_attrs.to_der()?);
-                let hashed = hasher.finalize();
-
-                match rsa_publickey.verify(Pkcs1v15Sign::new::<Sha1>(), &hashed, signature) {
-                    Ok(()) => { /*Validated*/ }
-                    Err(_) => return Ok(PeSignStatus::Invalid),
-                }
-
-                // message digest
-                match signed_attrs
+    // 从签名属性中获取副署签名信息
+    pub fn get_countersignature(self: &Self) -> Result<Option<SignerInfo>, PeSignError> {
+        let signer_info = &self.signer_info;
+        match &signer_info.unsigned_attrs {
+            Some(unsigned_attrs) => {
+                match unsigned_attrs
                     .0
                     .iter()
-                    .find(|v| v.oid == "1.2.840.113549.1.9.4")
+                    .find(|v| v.oid == "1.2.840.113549.1.9.6")
                 {
-                    Some(message_digest_attr) => match message_digest_attr.values.get(0) {
-                        Some(message_digest_octet_string) => {
-                            let octet_string =
-                                OctetStringRef::from_der(&message_digest_octet_string)
-                                    .map_unknown_err()?;
-                            let message_digest = octet_string.as_bytes();
+                    Some(countersignature_attr) => {
+                        let attr_value = countersignature_attr.values.concat();
+                        let cs_signer_info = cms::signed_data::SignerInfo::from_der(&attr_value)
+                            .map_app_err(PeSignErrorKind::InvalidCounterSignature)?;
 
-                            let mut hasher = Sha1::new();
-                            hasher.update(&self.encap_content_info.econtent_value);
-                            let hashed = hasher.finalize().to_vec();
-
-                            if hashed != message_digest {
-                                return Ok(PeSignStatus::Invalid);
-                            }
-                        }
-                        None => {
-                            return Err(PeSignError {
-                                kind: PeSignErrorKind::NoFoundMessageDigest,
-                                message: "".to_owned(),
-                            });
-                        }
-                    },
-                    None => {
-                        return Err(PeSignError {
-                            kind: PeSignErrorKind::NoFoundMessageDigest,
-                            message: "".to_owned(),
-                        });
+                        Ok(Some(cs_signer_info.try_into()?))
                     }
+                    None => Ok(None),
                 }
             }
-            // 如果不存在 signed_attrs，使用 signature 和 publickey 对 content 验签
-            None => {
-                let mut hasher = Sha1::new();
-                hasher.update(&self.encap_content_info.econtent_value);
-                let hashed = hasher.finalize();
-
-                match rsa_publickey.verify(Pkcs1v15Sign::new::<Sha1>(), &hashed, signature) {
-                    Ok(()) => { /*Validated*/ }
-                    Err(_) => return Ok(PeSignStatus::Invalid),
-                }
-            }
+            None => Ok(None),
         }
+    }
 
-        Ok(PeSignStatus::Valid)
+    // 验证签名有效性
+    pub fn verify(self: &Self) -> Result<PeSignStatus, PeSignError> {
+        self.signer_info.verify(
+            &self.signer_cert_chain,
+            &self.encap_content_info.econtent_value,
+        )
     }
 }

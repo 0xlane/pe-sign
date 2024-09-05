@@ -1,7 +1,6 @@
 use std::ops::Deref;
 
-use rsa::{pkcs1::DecodeRsaPublicKey, Pkcs1v15Sign};
-use sha1::{Digest, Sha1};
+use rsa::pkcs1::DecodeRsaPublicKey;
 
 use crate::{
     errors::{PeSignError, PeSignErrorKind, PeSignResult},
@@ -149,6 +148,7 @@ pub struct CertificateChain {
 
     // 证书链
     cert_chain: Vec<Certificate>,
+    // 签名算法
 }
 
 impl CertificateChain {
@@ -218,11 +218,15 @@ impl CertificateChain {
                     .map_app_err(PeSignErrorKind::InvalidPublicKey)?;
 
                 // 使用父证书的公钥验证签名，签名数据解密后里面有 tbs_certificate 内容的 hash，证书所有关键信息都在 tbs_certificate 里
-                let mut hasher = Sha1::new();
-                hasher.update(subject_cert.get_tbs_certificate_bytes());
+                let mut hasher = subject_cert.signature_algorithm.new_digest()?;
+                hasher.update(&subject_cert.get_tbs_certificate_bytes());
                 let hashed = hasher.finalize();
 
-                match rsa_publickey.verify(Pkcs1v15Sign::new::<Sha1>(), &hashed, signature) {
+                match rsa_publickey.verify(
+                    subject_cert.signature_algorithm.new_pkcs1v15sign()?,
+                    &hashed,
+                    signature,
+                ) {
                     Ok(()) => { /*Validated*/ }
                     Err(_) => return Ok(false),
                 }
