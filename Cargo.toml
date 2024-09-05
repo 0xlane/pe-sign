@@ -2,6 +2,8 @@
 name = "pe-sign"
 version = "0.1.0"
 edition = "2021"
+description = "A rust library for verifying and extracting signature information from PE files."
+license = "MIT"
 
 [lib]
 name = "pesign"
