@@ -2,6 +2,12 @@ use std::fmt;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeSignErrorKind {
+    // IO 错误
+    IoError,
+
+    // 无效的 PE 文件
+    InvalidPeFile,
+
     // 无效的证书内容
     InvalidContentInfo,
 

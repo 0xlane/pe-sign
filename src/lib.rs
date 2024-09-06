@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use asn1_types::SpcIndirectDataContent;
 use cert::Algorithm;
 use cms::{
@@ -6,6 +8,7 @@ use cms::{
 };
 use der::{asn1::SetOfVec, Encode};
 use errors::{PeSignError, PeSignErrorKind, PeSignResult};
+use exe::{Buffer, ImageDirectoryEntry, VecPE, PE};
 use signed_data::SignedData;
 use utils::{to_hex_str, TryVecInto};
 
@@ -95,6 +98,41 @@ impl<'a> PeSign {
     pub fn from_certificate_table_buf(bin: &[u8]) -> Result<Self, PeSignError> {
         let mut reader = SliceReader::new(bin).map_unknown_err()?;
         Self::from_reader(&mut reader)
+    }
+
+    // 从 PE 文件中提取签名信息
+    pub fn from_pe_path<P: AsRef<Path>>(filename: P) -> Result<Option<Self>, PeSignError> {
+        let image = VecPE::from_disk_file(filename).map_app_err(PeSignErrorKind::IoError)?;
+
+        Self::from_vecpe(&image)
+    }
+
+    // 从 PE 数据中提取签名信息
+    pub fn from_pe_data(bin: &[u8]) -> Result<Option<Self>, PeSignError> {
+        let image = VecPE::from_disk_data(bin);
+
+        Self::from_vecpe(&image)
+    }
+
+    // 从 VecPE 提取签名信息
+    pub fn from_vecpe(image: &VecPE) -> Result<Option<Self>, PeSignError> {
+        // va = 0 表示无签名
+        let security_directory = image
+            .get_data_directory(ImageDirectoryEntry::Security)
+            .map_app_err(PeSignErrorKind::InvalidPeFile)?;
+        if security_directory.virtual_address.0 == 0x00 {
+            return Ok(None);
+        }
+
+        let signature_data =
+            Buffer::offset_to_ptr(image, security_directory.virtual_address.into())
+                .map_app_err(PeSignErrorKind::InvalidPeFile)?; // security_data_directory rva is equivalent to file offset
+
+        let win_certificate =
+            unsafe { std::slice::from_raw_parts(signature_data, security_directory.size as usize) };
+        let pkcs7 = &win_certificate[8..]; // _WIN_CERTIFICATE->bCertificate
+
+        Ok(Some(Self::from_certificate_table_buf(&pkcs7)?))
     }
 
     // 验证证书是否有效
@@ -286,6 +324,13 @@ mod tests {
         let pem = include_str!("./examples/pkcs7.pem");
         let result = PeSign::from_pem(pem);
 
-        assert!(result.is_ok())
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn from_pe() {
+        let result = PeSign::from_pe_data(include_bytes!("./examples/ProcessHacker.exe"));
+
+        assert!(result.is_ok());
     }
 }
