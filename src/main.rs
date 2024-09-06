@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use pe_sign::PeSign;
+use pesign::PeSign;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let bytes = include_bytes!("./examples/pkcs7.cer");
