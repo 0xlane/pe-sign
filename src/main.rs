@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
 };
 
-use pesign::PeSign;
+use pesign::{PeSign, VerifyOption};
 use pretty_hex::pretty_hex_write;
 
 fn cli() -> clap::Command {
@@ -40,8 +40,7 @@ fn cli() -> clap::Command {
                         .required(true),
                     arg!(--"no-check-time" "Ignore certificate validity time"),
                     arg!(--"ca-file" <FILE> "Trusted certificates file")
-                        .value_parser(value_parser!(PathBuf))
-                        .default_value("cacert.pem"),
+                        .value_parser(value_parser!(PathBuf)),
                 ]),
         )
         .subcommand(
@@ -111,12 +110,26 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Some(("verify", sub_matches)) => {
             let file = sub_matches.get_one::<PathBuf>("FILE").unwrap();
-            let _ = sub_matches.get_flag("no-check-time");
-            let _ = sub_matches.get_one::<PathBuf>("ca-file").unwrap();
+            let check_time = !sub_matches.get_flag("no-check-time");
+            let trusted_ca_pem_file = sub_matches.get_one::<PathBuf>("ca-file");
+
+            let trusted_ca_pem = match trusted_ca_pem_file {
+                Some(trusted_ca_pem_file) => Some(std::fs::read_to_string(trusted_ca_pem_file)?),
+                None => None,
+            };
 
             match PeSign::from_pe_path(file)? {
                 Some(pesign) => {
-                    println!("{:?}", pesign.verify_pe_path(file)?);
+                    println!(
+                        "{:?}",
+                        pesign.verify_pe_path(
+                            file,
+                            &VerifyOption {
+                                check_time,
+                                trusted_ca_pem
+                            }
+                        )?
+                    );
                 }
                 None => {
                     println!("The file is no signed!!");

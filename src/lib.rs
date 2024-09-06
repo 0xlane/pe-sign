@@ -241,36 +241,45 @@ impl<'a> PeSign {
     }
 
     // 验证证书是否有效
-    pub fn verify(self: &Self) -> Result<PeSignStatus, PeSignError> {
-        self.signed_data.verify()
+    pub fn verify(self: &Self, option: &VerifyOption) -> Result<PeSignStatus, PeSignError> {
+        self.signed_data.verify(option)
     }
 
     // 验证 PE 是否被篡改
     pub fn verify_pe_path<P: AsRef<Path>>(
         self: &Self,
         filename: P,
+        option: &VerifyOption,
     ) -> Result<PeSignStatus, PeSignError> {
         let image = VecPE::from_disk_file(filename).map_app_err(PeSignErrorKind::IoError)?;
 
-        self.verify_vecpe(&image)
+        self.verify_vecpe(&image, option)
     }
 
     // 验证 PE 是否被篡改
-    pub fn verify_pe_data(self: &Self, bin: &[u8]) -> Result<PeSignStatus, PeSignError> {
+    pub fn verify_pe_data(
+        self: &Self,
+        bin: &[u8],
+        option: &VerifyOption,
+    ) -> Result<PeSignStatus, PeSignError> {
         let image = VecPE::from_disk_data(bin);
 
-        self.verify_vecpe(&image)
+        self.verify_vecpe(&image, option)
     }
 
     // 验证 PE 是否被篡改
-    pub fn verify_vecpe(self: &Self, image: &VecPE) -> Result<PeSignStatus, PeSignError> {
+    pub fn verify_vecpe(
+        self: &Self,
+        image: &VecPE,
+        option: &VerifyOption,
+    ) -> Result<PeSignStatus, PeSignError> {
         let authenticode =
             Self::calc_authenticode_from_vecpe(image, &self.authenticode_digest_algorithm)?;
 
         if authenticode != self.authenticode_digest {
             Ok(PeSignStatus::Invalid)
         } else {
-            self.verify()
+            self.verify(option)
         }
     }
 
@@ -300,6 +309,23 @@ pub enum PeSignStatus {
 
     // 证书有效
     Valid,
+}
+
+const DEFAULT_TRUSTED_CA_PEM: &str = include_str!("./cacert.pem");
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifyOption {
+    pub check_time: bool,
+    pub trusted_ca_pem: Option<String>,
+}
+
+impl Default for VerifyOption {
+    fn default() -> Self {
+        Self {
+            check_time: true,
+            trusted_ca_pem: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -406,7 +432,9 @@ mod tests {
         let bytes = include_bytes!("./examples/pkcs7.cer");
         let pesign = PeSign::from_certificate_table_buf(bytes).unwrap();
 
-        let signature_value = &pesign.signed_data.signer_cert_chain[0].signature_value[..];
+        let signer_cert_chain = pesign.signed_data.build_certificate_chain(None).unwrap();
+
+        let signature_value = &signer_cert_chain[0].signature_value[..];
         let signature_bin = include_bytes!("./examples/signature.bin");
 
         assert_eq!(signature_value, signature_bin);
@@ -486,7 +514,7 @@ mod tests {
         let status = PeSign::from_pe_data(pedata)
             .unwrap()
             .unwrap()
-            .verify_pe_data(pedata)
+            .verify_pe_data(pedata, &Default::default())
             .unwrap();
 
         assert_eq!(status, PeSignStatus::Valid);

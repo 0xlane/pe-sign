@@ -62,7 +62,7 @@ impl der::pem::PemLabel for Certificate {
 
 impl Certificate {
     // 从 PEM 文件导入证书
-    pub fn load_pem_chain(mut input: &[u8]) -> Result<Vec<Self>, PeSignError> {
+    pub fn load_pem_chain(input: &str) -> Result<Vec<Self>, PeSignError> {
         fn find_boundary<T>(haystack: &[T], needle: &[T]) -> Option<usize>
         where
             for<'a> &'a [T]: PartialEq,
@@ -77,6 +77,8 @@ impl Certificate {
 
         let start_boundary = &b"-----BEGIN CERTIFICATE-----"[..];
         let end_boundary = &b"-----END CERTIFICATE-----"[..];
+
+        let mut input = input.as_bytes();
 
         // Strip the trailing whitespaces
         loop {

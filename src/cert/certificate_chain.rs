@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{ops::Deref, time::UNIX_EPOCH};
 
 use rsa::pkcs1::DecodeRsaPublicKey;
 
@@ -183,7 +183,25 @@ impl Deref for CertificateChain {
 }
 
 impl CertificateChain {
-    // 验证证书链是否可信
+    // 证书是否过期
+    pub fn is_expired(self: &Self) -> Result<bool, PeSignError> {
+        for cert in &self.cert_chain {
+            let start_time = cert.validity.not_before;
+            let end_time = cert.validity.not_after;
+
+            let cur_time = std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_unknown_err()?;
+
+            if cur_time < start_time || cur_time > end_time {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    // 验证证书链是否可信（不验证有效时间）
     pub fn is_trusted(self: &Self) -> Result<bool, PeSignError> {
         if self.cert_chain.len() < 2 {
             // 小于2个证书直接判定为不可信

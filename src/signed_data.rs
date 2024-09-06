@@ -15,7 +15,7 @@ use crate::{
         CertificateChainBuilder, IssuerAndSerialNumber,
     },
     errors::{PeSignError, PeSignErrorKind, PeSignResult},
-    Attributes, PeSign, PeSignStatus,
+    Attributes, PeSign, PeSignStatus, VerifyOption, DEFAULT_TRUSTED_CA_PEM,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -85,12 +85,30 @@ impl TryFrom<cms::signed_data::SignerInfo> for SignerInfo {
 impl SignerInfo {
     pub fn verify(
         self: &Self,
-        cert_chain: &CertificateChain,
+        cert_list: &[Certificate],
         indata: &[u8],
+        option: &VerifyOption,
     ) -> Result<PeSignStatus, PeSignError> {
+        // 构建证书链
+        let cert_chain = CertificateChainBuilder::new()
+            .set_trusted_ca_certs(&Certificate::load_pem_chain(
+                match &option.trusted_ca_pem {
+                    Some(ca_pem) => ca_pem.as_str(),
+                    None => DEFAULT_TRUSTED_CA_PEM,
+                },
+            )?)
+            .set_cert_list(cert_list)
+            .set_sid(self.sid.clone())
+            .build()?;
+
         // 验证证书链是否可信
         if !cert_chain.is_trusted()? {
             return Ok(PeSignStatus::UntrustedCertificateChain);
+        }
+
+        // 过期时间验证
+        if option.check_time && cert_chain.is_expired()? {
+            return Ok(PeSignStatus::Expired);
         }
 
         // 从签名者证书中获取到公钥
@@ -214,7 +232,6 @@ impl TryFrom<cms::signed_data::EncapsulatedContentInfo> for EncapsulatedContentI
 pub struct SignedData {
     pub encap_content_info: EncapsulatedContentInfo, // messageDigest
     pub signer_info: SignerInfo,                     // signerInfo
-    pub signer_cert_chain: CertificateChain,         // signer_cert
     pub cert_list: Vec<Certificate>,                 // cert list
     __inner: cms::signed_data::SignedData,
 }
@@ -275,13 +292,9 @@ impl TryFrom<cms::signed_data::SignedData> for SignedData {
         // signer info
         let signer_info: SignerInfo = signer_info.clone().try_into()?;
 
-        // signer certificate chain
-        let signer_cert_chain = Self::build_certificate_chain(&cert_list, &signer_info)?;
-
         Ok(Self {
             encap_content_info,
             signer_info,
-            signer_cert_chain,
             cert_list,
             __inner,
         })
@@ -291,17 +304,17 @@ impl TryFrom<cms::signed_data::SignedData> for SignedData {
 impl SignedData {
     // 获取证书链
     pub fn build_certificate_chain(
-        cert_list: &[Certificate],
-        signer_info: &SignerInfo,
+        self: &Self,
+        ca_pem: Option<&str>,
     ) -> Result<CertificateChain, PeSignError> {
-        // 加载 cacert.pem 中的 CA 证书
-        let cacerts: Vec<Certificate> = Certificate::load_pem_chain(include_bytes!("cacert.pem"))?;
-
         // 构建证书建
         let cert_chain = CertificateChainBuilder::new()
-            .set_trusted_ca_certs(&cacerts)
-            .set_cert_list(cert_list)
-            .set_sid(signer_info.sid.clone())
+            .set_trusted_ca_certs(&Certificate::load_pem_chain(match ca_pem {
+                Some(ca_pem) => ca_pem,
+                None => DEFAULT_TRUSTED_CA_PEM,
+            })?)
+            .set_cert_list(&self.cert_list)
+            .set_sid(self.signer_info.sid.clone())
             .build()?;
 
         Ok(cert_chain)
@@ -334,11 +347,15 @@ impl SignedData {
     // 构建副署签名证书链
     pub fn build_contersignature_cert_chain(
         self: &Self,
+        ca_pem: Option<&str>,
     ) -> Result<Option<CertificateChain>, PeSignError> {
         if let Some(cs_signer_info) = self.get_countersignature()? {
             // 构建证书建
             let cert_chain = CertificateChainBuilder::new()
-                .set_trusted_ca_certs(self.signer_cert_chain.get_trusted_ca_list())
+                .set_trusted_ca_certs(&Certificate::load_pem_chain(match ca_pem {
+                    Some(ca_pem) => ca_pem,
+                    None => DEFAULT_TRUSTED_CA_PEM,
+                })?)
                 .set_cert_list(&self.cert_list)
                 .set_sid(cs_signer_info.sid.clone())
                 .build()?;
@@ -482,10 +499,11 @@ impl SignedData {
     }
 
     // 验证签名有效性
-    pub fn verify(self: &Self) -> Result<PeSignStatus, PeSignError> {
+    pub fn verify(self: &Self, option: &VerifyOption) -> Result<PeSignStatus, PeSignError> {
         self.signer_info.verify(
-            &self.signer_cert_chain,
+            &self.cert_list,
             &self.encap_content_info.econtent_value,
+            option,
         )
     }
 }
