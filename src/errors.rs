@@ -68,6 +68,12 @@ pub enum PeSignErrorKind {
     // 无效的TSTInfo
     InvalidTSTInfo,
 
+    // 导出 DER 错误
+    ExportDerError,
+
+    // 导出 PEM 错误
+    ExportPemError,
+
     // 未知错误
     Unknown,
 }

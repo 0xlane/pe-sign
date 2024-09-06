@@ -2,7 +2,11 @@
 name = "pe-sign"
 version = "0.1.0"
 edition = "2021"
+author = "REinject"
+homepage = "https://github.com/0xlane/pe-sign"
+repository = "https://github.com/0xlane/pe-sign"
 description = "A rust library for verifying and extracting signature information from PE files."
+keywords = ["portable-executable", "blue-team", "signature", "certificate"]
 license = "MIT"
 
 [lib]
@@ -12,9 +16,14 @@ path = "src/lib.rs"
 [[bin]]
 name = "pesign"
 path = "src/main.rs"
+required-features = ["build-binary"]
+
+[features]
+build-binary = ["dep:clap", "dep:pretty-hex"]
 
 [dependencies]
 clap = { version = "4.5.17", optional = true }
+pretty-hex = { version = "0.4.1", optional = true }
 cms = { version = "0.2.3", features = ["std"] }
 der = { version = "0.7.9", features = ["derive"] }
 digest = { version = "0.10.7", features = ["oid"] }

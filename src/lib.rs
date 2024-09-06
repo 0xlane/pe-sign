@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{ops::Range, path::Path};
 
 use asn1_types::SpcIndirectDataContent;
 use cert::Algorithm;
@@ -6,9 +6,9 @@ use cms::{
     cert::x509::der::{oid::db::rfc5911::ID_SIGNED_DATA, Decode, SliceReader},
     content_info::ContentInfo,
 };
-use der::{asn1::SetOfVec, Encode};
+use der::{asn1::SetOfVec, Encode, EncodePem};
 use errors::{PeSignError, PeSignErrorKind, PeSignResult};
-use exe::{Buffer, ImageDirectoryEntry, VecPE, PE};
+use exe::{Buffer, ImageDataDirectory, ImageDirectoryEntry, NTHeaders, VecPE, PE};
 use signed_data::SignedData;
 use utils::{to_hex_str, TryVecInto};
 
@@ -22,8 +22,8 @@ pub use der;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PeSign {
     pub signed_data: SignedData,
-    pub authenticode: String,
-    pub authenticode_digest: Algorithm,
+    pub authenticode_digest: String,
+    pub authenticode_digest_algorithm: Algorithm,
     __inner: cms::content_info::ContentInfo,
 }
 
@@ -75,8 +75,8 @@ impl<'a> PeSign {
                             spc_indirect_data_content.message_digest.algorithm.into();
                         Ok(Self {
                             signed_data,
-                            authenticode,
-                            authenticode_digest,
+                            authenticode_digest: authenticode,
+                            authenticode_digest_algorithm: authenticode_digest,
                             __inner,
                         })
                     }
@@ -135,9 +135,154 @@ impl<'a> PeSign {
         Ok(Some(Self::from_certificate_table_buf(&pkcs7)?))
     }
 
+    // 计算 PE 文件 authenticode
+    pub fn calc_authenticode_from_pe_path<P: AsRef<Path>>(
+        filename: P,
+        algorithm: &Algorithm,
+    ) -> Result<String, PeSignError> {
+        let image = VecPE::from_disk_file(filename).map_app_err(PeSignErrorKind::IoError)?;
+
+        Self::calc_authenticode_from_vecpe(&image, algorithm)
+    }
+
+    // 计算 PE 文件 authenticode
+    pub fn calc_authenticode_from_pe_data(
+        bin: &[u8],
+        algorithm: &Algorithm,
+    ) -> Result<String, PeSignError> {
+        let image = VecPE::from_disk_data(bin);
+
+        Self::calc_authenticode_from_vecpe(&image, algorithm)
+    }
+
+    // 计算 PE 文件 authenticode
+    pub fn calc_authenticode_from_vecpe(
+        image: &VecPE,
+        algorithm: &Algorithm,
+    ) -> Result<String, PeSignError> {
+        let mut hasher = algorithm.new_digest()?;
+
+        // SizeOfHeaders > dosHeader + ntHeader + dataDirectory + sectionTable
+        let (checknum_ref, size_of_headers) = match image
+            .get_valid_nt_headers()
+            .map_app_err(PeSignErrorKind::InvalidPeFile)?
+        {
+            NTHeaders::NTHeaders32(h32) => (
+                &h32.optional_header.checksum,
+                h32.optional_header.size_of_headers as usize,
+            ),
+            NTHeaders::NTHeaders64(h64) => (
+                &h64.optional_header.checksum,
+                h64.optional_header.size_of_headers as usize,
+            ),
+        };
+        let checknum_offset = image
+            .ref_to_offset(checknum_ref)
+            .map_app_err(PeSignErrorKind::InvalidPeFile)?;
+        let before_checknum_offset = checknum_offset;
+        let after_checknum_offset = checknum_offset
+            .checked_add(std::mem::size_of::<u32>())
+            .ok_or(PeSignError {
+                kind: PeSignErrorKind::InvalidPeFile,
+                message: "overflow".to_owned(),
+            })?;
+        let sec_directory_ref = image
+            .get_data_directory(ImageDirectoryEntry::Security)
+            .map_app_err(PeSignErrorKind::InvalidPeFile)?;
+        let sec_directory_offset = image
+            .ref_to_offset(sec_directory_ref)
+            .map_app_err(PeSignErrorKind::InvalidPeFile)?;
+        let before_sec_directory_offset = sec_directory_offset;
+        let after_sec_directory_offset = sec_directory_offset
+            .checked_add(std::mem::size_of::<ImageDataDirectory>())
+            .ok_or(PeSignError {
+                kind: PeSignErrorKind::InvalidPeFile,
+                message: "overflow".to_owned(),
+            })?;
+        let header_end_offset = size_of_headers;
+        let file_size = image.len();
+        let mut num_of_bytes_hashed: usize;
+
+        hasher.update(&image[..before_checknum_offset]);
+        hasher.update(&image[after_checknum_offset..before_sec_directory_offset]);
+        hasher.update(&image[after_sec_directory_offset..header_end_offset]);
+        num_of_bytes_hashed = header_end_offset;
+
+        // 排序 section 后 hash
+        let mut section_ranges = image
+            .get_section_table()
+            .map_app_err(PeSignErrorKind::InvalidPeFile)?
+            .iter()
+            .map(|v| {
+                v.pointer_to_raw_data.0 as usize
+                    ..v.pointer_to_raw_data.0 as usize + v.size_of_raw_data as usize
+            })
+            .collect::<Vec<Range<usize>>>();
+        section_ranges.sort_unstable_by_key(|v| v.start);
+
+        for section_range in section_ranges {
+            let section_data = &image[section_range];
+            hasher.update(section_data);
+            num_of_bytes_hashed += section_data.len();
+        }
+
+        // Security data size
+        let num_of_security_data = sec_directory_ref.size as usize;
+
+        // hash 额外内容
+        let extra_start = num_of_bytes_hashed;
+        let extra_size = file_size - num_of_security_data - num_of_bytes_hashed;
+        let extra_end = extra_start + extra_size;
+        hasher.update(&image[extra_start..extra_end]);
+
+        let result = hasher.finalize();
+
+        Ok(to_hex_str(&result))
+    }
+
     // 验证证书是否有效
     pub fn verify(self: &Self) -> Result<PeSignStatus, PeSignError> {
         self.signed_data.verify()
+    }
+
+    // 验证 PE 是否被篡改
+    pub fn verify_pe_path<P: AsRef<Path>>(
+        self: &Self,
+        filename: P,
+    ) -> Result<PeSignStatus, PeSignError> {
+        let image = VecPE::from_disk_file(filename).map_app_err(PeSignErrorKind::IoError)?;
+
+        self.verify_vecpe(&image)
+    }
+
+    // 验证 PE 是否被篡改
+    pub fn verify_pe_data(self: &Self, bin: &[u8]) -> Result<PeSignStatus, PeSignError> {
+        let image = VecPE::from_disk_data(bin);
+
+        self.verify_vecpe(&image)
+    }
+
+    // 验证 PE 是否被篡改
+    pub fn verify_vecpe(self: &Self, image: &VecPE) -> Result<PeSignStatus, PeSignError> {
+        let authenticode =
+            Self::calc_authenticode_from_vecpe(image, &self.authenticode_digest_algorithm)?;
+
+        if authenticode != self.authenticode_digest {
+            Ok(PeSignStatus::Invalid)
+        } else {
+            self.verify()
+        }
+    }
+
+    // 导出为 DER
+    pub fn export_der(self: &Self) -> Result<Vec<u8>, PeSignError> {
+        self.to_der().map_app_err(PeSignErrorKind::ExportDerError)
+    }
+
+    // 导出为 PEM
+    pub fn export_pem(self: &Self) -> Result<String, PeSignError> {
+        self.to_pem(Default::default())
+            .map_app_err(PeSignErrorKind::ExportPemError)
     }
 }
 
@@ -239,7 +384,7 @@ mod tests {
         let pesign = PeSign::from_certificate_table_buf(bytes).unwrap();
 
         assert_eq!(
-            pesign.authenticode,
+            pesign.authenticode_digest,
             "9253a6f72ee0e3970d5457e0f061fdb40b484f18"
         );
     }
@@ -251,7 +396,7 @@ mod tests {
         let nested = pesign.signed_data.get_nested_signature().unwrap().unwrap();
 
         assert_eq!(
-            nested.authenticode,
+            nested.authenticode_digest,
             "33a755311b428c2063f983058dbf9e1648d00d5fec4adf00e0a34ddee639f68b",
         );
     }
@@ -332,5 +477,18 @@ mod tests {
         let result = PeSign::from_pe_data(include_bytes!("./examples/ProcessHacker.exe"));
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn verify_pe() {
+        let pedata = include_bytes!("./examples/ProcessHacker.exe");
+
+        let status = PeSign::from_pe_data(pedata)
+            .unwrap()
+            .unwrap()
+            .verify_pe_data(pedata)
+            .unwrap();
+
+        assert_eq!(status, PeSignStatus::Valid);
     }
 }

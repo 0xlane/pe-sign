@@ -1,39 +1,150 @@
-use std::{default::Default, error::Error};
+use std::{
+    default::Default,
+    error::Error,
+    fs::File,
+    io::{BufWriter, IsTerminal, Write},
+    path::PathBuf,
+};
 
-use der::EncodePem;
 use pesign::PeSign;
+use pretty_hex::pretty_hex_write;
+
+fn cli() -> clap::Command {
+    use clap::{arg, value_parser, Command};
+
+    Command::new("pe-sign")
+        .version("0.1.0")
+        .about("A tool for parsing and verifing PE file signatures")
+        .author("REinject")
+        .help_template("{name} ({version}) - {author}\n{about}\n{all-args}")
+        .subcommand_required(true)
+        .subcommand(
+            Command::new("extract")
+                .about("Extract the certificate of a PE file")
+                .args(&[
+                    arg!([FILE])
+                        .value_parser(value_parser!(PathBuf))
+                        .required(true),
+                    arg!(-o --output <FILE> "Write to file instead of stdout")
+                        .value_parser(value_parser!(PathBuf)),
+                    arg!(--pem "Extract and convert certificate to pem format"),
+                    arg!(--embed "Extract embedded certificate"),
+                ]),
+        )
+        .subcommand(
+            Command::new("verify")
+                .about("Check the digital signature of a PE file for validity")
+                .args(&[
+                    arg!([FILE])
+                        .value_parser(value_parser!(PathBuf))
+                        .required(true),
+                    arg!(--"no-check-time" "Ignore certificate validity time"),
+                    arg!(--"ca-file" <FILE> "Trusted certificates file")
+                        .value_parser(value_parser!(PathBuf))
+                        .default_value("cacert.pem"),
+                ]),
+        )
+        .subcommand(
+            Command::new("calc")
+                .about("Calculate the authticode digest of a PE file")
+                .args(&[
+                    arg!([FILE])
+                        .value_parser(value_parser!(PathBuf))
+                        .required(true),
+                    arg!(-a --algorithm <ALGORITHM> "Hash algorithm")
+                        .value_parser(["sha1", "sha224", "sha256", "sha384", "sha512"])
+                        .default_value("sha256"),
+                ]),
+        )
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let bytes = include_bytes!("./examples/pkcs7.cer");
-    let pesign = PeSign::from_certificate_table_buf(bytes)?;
+    // 解析参数
+    let matches = cli().get_matches();
 
-    for cert in &pesign.signed_data.signer_cert_chain[..] {
-        println!("subject: {}", cert.subject);
-        println!("issuer:  {}", cert.issuer);
-        println!("issuer:  {}", cert.subject_public_key_info.algorithm);
-        println!();
+    match matches.subcommand() {
+        Some(("extract", sub_matches)) => {
+            let file = sub_matches.get_one::<PathBuf>("FILE").unwrap();
+            let pem = sub_matches.get_flag("pem");
+            let embedded = sub_matches.get_flag("embed");
+
+            // 从文件解析 pkcs7 签名数据
+            let pesign = match PeSign::from_pe_path(file)? {
+                Some(pesign) => match embedded {
+                    true => match pesign.signed_data.get_nested_signature()? {
+                        Some(nested_pesign) => nested_pesign,
+                        None => {
+                            println!("The file is no nested signature!!");
+                            return Ok(());
+                        }
+                    },
+                    false => pesign,
+                },
+                None => {
+                    println!("The file is no signed!!");
+                    return Ok(());
+                }
+            };
+
+            // 输出到文件
+            let export_bytes = match pem {
+                true => pesign.export_pem()?.as_bytes().to_vec(),
+                false => pesign.export_der()?,
+            };
+
+            let is_terminal = std::io::stdout().is_terminal();
+            let output = sub_matches.get_one::<PathBuf>("output");
+            let mut out_writer = BufWriter::new(match output {
+                Some(output) => Box::new(File::create(output)?) as Box<dyn Write>,
+                None => Box::new(std::io::stdout()) as Box<dyn Write>,
+            });
+
+            if output.is_none() && !pem && is_terminal {
+                let mut str = String::new();
+                pretty_hex_write(&mut str, &export_bytes)?;
+                out_writer.write_all(str.as_bytes())?;
+            } else {
+                out_writer.write_all(&export_bytes)?;
+            }
+
+            Ok(())
+        }
+        Some(("verify", sub_matches)) => {
+            let file = sub_matches.get_one::<PathBuf>("FILE").unwrap();
+            let _ = sub_matches.get_flag("no-check-time");
+            let _ = sub_matches.get_one::<PathBuf>("ca-file").unwrap();
+
+            match PeSign::from_pe_path(file)? {
+                Some(pesign) => {
+                    println!("{:?}", pesign.verify_pe_path(file)?);
+                }
+                None => {
+                    println!("The file is no signed!!");
+                }
+            }
+
+            Ok(())
+        }
+        Some(("calc", sub_matches)) => {
+            let file = sub_matches.get_one::<PathBuf>("FILE").unwrap();
+            let algorithm_str = sub_matches.get_one::<String>("algorithm").unwrap();
+
+            let algorithm = match algorithm_str.as_str() {
+                "sha1" => pesign::cert::Algorithm::Sha1,
+                "sha224" => pesign::cert::Algorithm::Sha224,
+                "sha256" => pesign::cert::Algorithm::Sha256,
+                "sha384" => pesign::cert::Algorithm::Sha384,
+                "sha512" => pesign::cert::Algorithm::Sha512,
+                _ => unreachable!(),
+            };
+
+            println!(
+                "{}",
+                PeSign::calc_authenticode_from_pe_path(&file, &algorithm)?
+            );
+
+            Ok(())
+        }
+        _ => unreachable!("subcommand_required is true"),
     }
-
-    let trusted = pesign.signed_data.signer_cert_chain.is_trusted()?;
-    println!("{}", trusted);
-
-    let status = pesign.verify()?;
-    println!("{:?}", status);
-
-    let cs_cert_chain = pesign.signed_data.build_contersignature_cert_chain()?.unwrap();
-
-    for cert in &cs_cert_chain[..] {
-        println!("subject: {}", cert.subject);
-        println!("issuer:  {}", cert.issuer);
-        println!("issuer:  {}", cert.subject_public_key_info.algorithm);
-        println!();
-    }
-
-    let nested_signature = pesign.signed_data.get_nested_signature()?.unwrap();
-    println!("{:?}", nested_signature.signed_data.get_signature_time()?.as_secs());
-    println!("{}", nested_signature.authenticode);
-
-    println!("{}", pesign.to_pem(Default::default())?);
-
-    Ok(())
 }
