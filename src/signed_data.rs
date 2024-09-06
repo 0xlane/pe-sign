@@ -1,4 +1,7 @@
-use std::time::Duration;
+use std::{
+    fmt::{Debug, Display},
+    time::Duration,
+};
 
 use cms::{attr::SigningTime, content_info::ContentInfo};
 use der::{
@@ -228,7 +231,7 @@ impl TryFrom<cms::signed_data::EncapsulatedContentInfo> for EncapsulatedContentI
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SignedData {
     pub encap_content_info: EncapsulatedContentInfo, // messageDigest
     pub signer_info: SignerInfo,                     // signerInfo
@@ -298,6 +301,17 @@ impl TryFrom<cms::signed_data::SignedData> for SignedData {
             cert_list,
             __inner,
         })
+    }
+}
+
+impl Debug for SignedData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SignedData")
+            .field("encap_content_info", &self.encap_content_info)
+            .field("signer_info", &self.signer_info)
+            .field("cert_list", &self.cert_list)
+            .field("__inner", &self.__inner)
+            .finish()
     }
 }
 

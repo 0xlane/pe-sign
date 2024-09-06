@@ -68,3 +68,52 @@ where
         self.and_then(|v| Some(v.vec_into()))
     }
 }
+
+pub trait IndentString {
+    fn indent(self, size: u8) -> String;
+}
+
+impl<T> IndentString for T
+where
+    T: AsRef<str>,
+{
+    fn indent(self, size: u8) -> String {
+        let mut result = String::new();
+        for line in self.as_ref().lines() {
+            result.push_str((" ".repeat(size as _) + line + "\n").as_str());
+        }
+        result.trim_end().to_owned()
+    }
+}
+
+pub trait DisplayBytes {
+    fn to_string(self) -> String;
+}
+
+impl<T> DisplayBytes for T
+where
+    T: AsRef<[u8]>,
+{
+    fn to_string(self) -> String {
+        const LINE_SIZE: usize = 18;
+        #[cfg(target_os = "windows")]
+        const NEWLINE: &str = "\r\n";
+
+        #[cfg(not(target_os = "windows"))]
+        const NEWLINE: &str = "\n";
+
+        let mut result = String::new();
+
+        for (index, value) in self.as_ref().iter().enumerate() {
+            if index != 0 && index % LINE_SIZE == 0 {
+                result.push_str(NEWLINE);
+            }
+
+            result.push_str(format!("{:02x}:", value).as_str());
+        }
+
+        result
+            .trim_end_matches(|v| v == ':' || v == '\n')
+            .to_owned()
+    }
+}

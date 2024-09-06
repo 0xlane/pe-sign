@@ -9,13 +9,13 @@ use der::{
     Decode, Encode,
 };
 use digest::{Digest, DynDigest};
-use rsa::Pkcs1v15Sign;
+use rsa::{pkcs1::DecodeRsaPublicKey, traits::PublicKeyParts, Pkcs1v15Sign, RsaPublicKey};
 use sha1::Sha1;
 use sha2::{Sha224, Sha256, Sha384, Sha512};
 
 use crate::{
     errors::{PeSignError, PeSignErrorKind, PeSignResult},
-    utils::TryVecInto,
+    utils::{DisplayBytes, IndentString, TryVecInto},
 };
 
 use super::{
@@ -58,6 +58,12 @@ impl<'a> der::Decode<'a> for Certificate {
 
 impl der::pem::PemLabel for Certificate {
     const PEM_LABEL: &'static str = "CERTIFICATE";
+}
+
+impl Display for Certificate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
 }
 
 impl Certificate {
@@ -297,6 +303,7 @@ pub struct SubjectPublicKeyInfo {
     pub algorithm: Algorithm,
     pub subject_public_key: Vec<u8>,
     __inner: x509_cert::spki::SubjectPublicKeyInfoOwned,
+    __inner_public_key: Option<RsaPublicKey>,
 }
 
 impl der::Encode for SubjectPublicKeyInfo {
@@ -327,11 +334,55 @@ impl TryFrom<x509_cert::spki::SubjectPublicKeyInfoOwned> for SubjectPublicKeyInf
 
     fn try_from(value: x509_cert::spki::SubjectPublicKeyInfoOwned) -> Result<Self, Self::Error> {
         let __inner = value.clone();
+        let algorithm = value.algorithm.into();
+        let mut rsa_publickey = None;
+
+        if algorithm == Algorithm::RSA {
+            rsa_publickey = Some(
+                RsaPublicKey::from_pkcs1_der(value.subject_public_key.raw_bytes())
+                    .map_app_err(PeSignErrorKind::InvalidPublicKey)?,
+            );
+        }
 
         Ok(Self {
-            algorithm: value.algorithm.into(),
+            algorithm,
             subject_public_key: value.subject_public_key.raw_bytes().to_vec(),
             __inner,
+            __inner_public_key: rsa_publickey,
         })
+    }
+}
+
+impl Display for SubjectPublicKeyInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Subject Public Key Info:")?;
+        writeln!(
+            f,
+            "{}",
+            format!("Algorithm: {:?}", self.algorithm).indent(4)
+        )?;
+        writeln!(
+            f,
+            "{}",
+            format!(
+                "Public-Key: ({} bit)\nModules:",
+                (self.get_public_key_modules().len() - 1) * 8
+            )
+            .indent(4)
+        )?;
+        writeln!(f, "{}", self.get_public_key_modules().to_string().indent(8))
+    }
+}
+
+impl SubjectPublicKeyInfo {
+    pub fn get_public_key_modules(self: &Self) -> Vec<u8> {
+        match &self.__inner_public_key {
+            Some(rsa_public_key) => {
+                let mut tmp = rsa_public_key.n().to_bytes_be();
+                tmp.insert(0, 0);
+                tmp
+            }
+            None => self.subject_public_key.clone(),
+        }
     }
 }

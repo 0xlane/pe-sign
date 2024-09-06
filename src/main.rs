@@ -130,6 +130,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                             }
                         )?
                     );
+
+                    println!("{}", pesign.signed_data.cert_list[0].subject_public_key_info);
                 }
                 None => {
                     println!("The file is no signed!!");
