@@ -1,5 +1,6 @@
-use std::error::Error;
+use std::{default::Default, error::Error};
 
+use der::EncodePem;
 use pesign::PeSign;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -28,23 +29,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!();
     }
 
-    let nested_signed_data = pesign.signed_data.get_nested_signature()?.unwrap();
-    println!("{:?}", nested_signed_data.get_signature_time()?.as_secs());
+    let nested_signature = pesign.signed_data.get_nested_signature()?.unwrap();
+    println!("{:?}", nested_signature.signed_data.get_signature_time()?.as_secs());
+    println!("{}", nested_signature.authenticode);
 
-    // for cert in &nested_signed_data.signer_cert_chain[..] {
-    //     println!("subject: {}", cert.subject);
-    //     println!("issuer:  {}", cert.issuer);
-    //     println!("issuer:  {}", cert.subject_public_key_info.algorithm);
-    //     println!();
-    // }
-
-    // let trusted = nested_signed_data.signer_cert_chain.is_trusted()?;
-    // println!("{}", trusted);
-    
-    // let status = nested_signed_data.verify()?;
-    // println!("{:?}", status);
-
-    // pesign.signed_data.get_signature_time()?;
+    println!("{}", pesign.to_pem(Default::default())?);
 
     Ok(())
 }

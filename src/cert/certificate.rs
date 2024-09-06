@@ -34,7 +34,30 @@ pub struct Certificate {
     pub extensions: Option<Extensions>,
     pub signature_algorithm: Algorithm,
     pub signature_value: Vec<u8>,
-    __inner_orginal_cert: x509_cert::Certificate,
+    __inner: x509_cert::Certificate,
+}
+
+impl der::Encode for Certificate {
+    fn encoded_len(&self) -> der::Result<der::Length> {
+        self.__inner.encoded_len()
+    }
+
+    fn encode(&self, encoder: &mut impl der::Writer) -> der::Result<()> {
+        self.__inner.encode(encoder)
+    }
+}
+
+impl<'a> der::Decode<'a> for Certificate {
+    fn decode<R: der::Reader<'a>>(decoder: &mut R) -> der::Result<Self> {
+        let cert = x509_cert::Certificate::decode(decoder)?;
+
+        cert.try_into()
+            .map_err(|_| der::Error::new(der::ErrorKind::Failed, der::Length::ZERO))
+    }
+}
+
+impl der::pem::PemLabel for Certificate {
+    const PEM_LABEL: &'static str = "CERTIFICATE";
 }
 
 impl Certificate {
@@ -130,7 +153,7 @@ impl Certificate {
 
     // 返回 tbs_certificate，用于验证证书是否可信，signature 解密后为 tbs_certificate 的 hash
     pub fn get_tbs_certificate_bytes(self: &Self) -> Vec<u8> {
-        self.__inner_orginal_cert.tbs_certificate.to_der().unwrap()
+        self.__inner.tbs_certificate.to_der().unwrap()
     }
 }
 
@@ -167,7 +190,7 @@ impl TryFrom<x509_cert::Certificate> for Certificate {
             extensions,
             signature_algorithm,
             signature_value,
-            __inner_orginal_cert,
+            __inner: __inner_orginal_cert,
         })
     }
 }
@@ -239,7 +262,7 @@ impl Algorithm {
 
     pub fn new_pkcs1v15sign(self: &Self) -> Result<Pkcs1v15Sign, PeSignError> {
         match self {
-            Algorithm::Sha1 | Algorithm::Sha1WithRSA  => Ok(Pkcs1v15Sign::new::<Sha1>()),
+            Algorithm::Sha1 | Algorithm::Sha1WithRSA => Ok(Pkcs1v15Sign::new::<Sha1>()),
             Algorithm::Sha224 | Algorithm::Sha224WithRSA => Ok(Pkcs1v15Sign::new::<Sha224>()),
             Algorithm::Sha256 | Algorithm::Sha256WithRSA => Ok(Pkcs1v15Sign::new::<Sha256>()),
             Algorithm::Sha384 | Algorithm::Sha384WithRSA => Ok(Pkcs1v15Sign::new::<Sha384>()),
@@ -271,15 +294,42 @@ impl From<x509_cert::time::Validity> for Validity {
 pub struct SubjectPublicKeyInfo {
     pub algorithm: Algorithm,
     pub subject_public_key: Vec<u8>,
+    __inner: x509_cert::spki::SubjectPublicKeyInfoOwned,
+}
+
+impl der::Encode for SubjectPublicKeyInfo {
+    fn encoded_len(&self) -> der::Result<der::Length> {
+        self.__inner.encoded_len()
+    }
+
+    fn encode(&self, encoder: &mut impl der::Writer) -> der::Result<()> {
+        self.__inner.encode(encoder)
+    }
+}
+
+impl<'a> der::Decode<'a> for SubjectPublicKeyInfo {
+    fn decode<R: der::Reader<'a>>(decoder: &mut R) -> der::Result<Self> {
+        let cert = x509_cert::spki::SubjectPublicKeyInfoOwned::decode(decoder)?;
+
+        cert.try_into()
+            .map_err(|_| der::Error::new(der::ErrorKind::Failed, der::Length::ZERO))
+    }
+}
+
+impl der::pem::PemLabel for SubjectPublicKeyInfo {
+    const PEM_LABEL: &'static str = "PUBLIC KEY";
 }
 
 impl TryFrom<x509_cert::spki::SubjectPublicKeyInfoOwned> for SubjectPublicKeyInfo {
     type Error = PeSignError;
 
     fn try_from(value: x509_cert::spki::SubjectPublicKeyInfoOwned) -> Result<Self, Self::Error> {
+        let __inner = value.clone();
+
         Ok(Self {
             algorithm: value.algorithm.into(),
             subject_public_key: value.subject_public_key.raw_bytes().to_vec(),
+            __inner,
         })
     }
 }

@@ -14,8 +14,8 @@ name = "pesign"
 path = "src/main.rs"
 
 [dependencies]
-cms = { version = "0.2.3", features = ["std"] }
-der = { version = "0.7.9", features = ["derive"] }
+cms = { version = "0.2.3", features = ["std", "pem"] }
+der = { version = "0.7.9", features = ["derive", "pem"] }
 digest = { version = "0.10.7", features = ["oid"] }
 pem-rfc7468 = { version = "1.0.0-rc.1", features = ["std"] }
 rsa = "0.9.6"

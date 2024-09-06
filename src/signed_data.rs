@@ -8,14 +8,14 @@ use der::{
 };
 use rsa::pkcs1::DecodeRsaPublicKey;
 
-use super::tstinfo::TSTInfo;
+use super::asn1_types::TSTInfo;
 use crate::{
     cert::{
         ext::SubjectKeyIdentifier, Algorithm, Certificate, CertificateChain,
         CertificateChainBuilder, IssuerAndSerialNumber,
     },
     errors::{PeSignError, PeSignErrorKind, PeSignResult},
-    Attributes, PeSignStatus,
+    Attributes, PeSign, PeSignStatus,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -216,12 +216,34 @@ pub struct SignedData {
     pub signer_info: SignerInfo,                     // signerInfo
     pub signer_cert_chain: CertificateChain,         // signer_cert
     pub cert_list: Vec<Certificate>,                 // cert list
+    __inner: cms::signed_data::SignedData,
+}
+
+impl der::Encode for SignedData {
+    fn encoded_len(&self) -> der::Result<der::Length> {
+        self.__inner.encoded_len()
+    }
+
+    fn encode(&self, encoder: &mut impl der::Writer) -> der::Result<()> {
+        self.__inner.encode(encoder)
+    }
+}
+
+impl<'a> der::Decode<'a> for SignedData {
+    fn decode<R: der::Reader<'a>>(decoder: &mut R) -> der::Result<Self> {
+        let cert = cms::signed_data::SignedData::decode(decoder)?;
+
+        cert.try_into()
+            .map_err(|_| der::Error::new(der::ErrorKind::Failed, der::Length::ZERO))
+    }
 }
 
 impl TryFrom<cms::signed_data::SignedData> for SignedData {
     type Error = PeSignError;
 
     fn try_from(signed_data: cms::signed_data::SignedData) -> Result<Self, Self::Error> {
+        let __inner = signed_data.clone();
+
         let encap_content_info = signed_data.encap_content_info.try_into()?;
         let signer_info = signed_data.signer_infos.0.get(0).ok_or(PeSignError {
             kind: PeSignErrorKind::NoFoundSignerInfo,
@@ -261,6 +283,7 @@ impl TryFrom<cms::signed_data::SignedData> for SignedData {
             signer_info,
             signer_cert_chain,
             cert_list,
+            __inner,
         })
     }
 }
@@ -369,7 +392,7 @@ impl SignedData {
     }
 
     // 获取内嵌签名
-    pub fn get_nested_signature(self: &Self) -> Result<Option<SignedData>, PeSignError> {
+    pub fn get_nested_signature(self: &Self) -> Result<Option<PeSign>, PeSignError> {
         match &self.signer_info.unsigned_attrs {
             Some(unsigned_attrs) => {
                 match unsigned_attrs
@@ -379,29 +402,9 @@ impl SignedData {
                 {
                     Some(nested_sign_attr) => {
                         let attr_value = &nested_sign_attr.values.concat()[..];
-                        let nested_signed_data = {
-                            let mut reader = SliceReader::new(attr_value).map_unknown_err()?;
-                            let ci = ContentInfo::decode(&mut reader)
-                                .map_app_err(PeSignErrorKind::InvalidContentInfo)?;
+                        let nested_sign = PeSign::from_certificate_table_buf(attr_value)?;
 
-                            // signedData
-                            match ci.content_type {
-                                ID_SIGNED_DATA => ci
-                                    .content
-                                    .decode_as::<cms::signed_data::SignedData>()
-                                    .map_app_err(PeSignErrorKind::InvalidSignedData)?
-                                    .try_into()?,
-                                ct => {
-                                    return Err(PeSignError {
-                                        kind: PeSignErrorKind::InvalidContentType,
-                                        message: ct.to_string(),
-                                    }
-                                    .into());
-                                }
-                            }
-                        };
-
-                        Ok(Some(nested_signed_data))
+                        Ok(Some(nested_sign))
                     }
                     None => Ok(None),
                 }

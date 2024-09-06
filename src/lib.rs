@@ -13,22 +13,43 @@ pub mod asn1_types;
 pub mod cert;
 pub mod errors;
 pub mod signed_data;
-pub mod tstinfo;
 pub mod utils;
+pub use der;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PeSign {
     pub signed_data: SignedData,
     pub authenticode: String,
     pub authenticode_digest: Algorithm,
+    __inner: cms::content_info::ContentInfo,
 }
 
-impl PeSign {
-    // 从导出的签名证书中提取签名信息
-    pub fn from_certificate_table_buf(bin: &[u8]) -> Result<Self, PeSignError> {
-        let mut reader = SliceReader::new(bin).map_unknown_err()?;
-        let ci =
-            ContentInfo::decode(&mut reader).map_app_err(PeSignErrorKind::InvalidContentInfo)?;
+impl der::Encode for PeSign {
+    fn encoded_len(&self) -> der::Result<der::Length> {
+        self.__inner.encoded_len()
+    }
+
+    fn encode(&self, encoder: &mut impl der::Writer) -> der::Result<()> {
+        self.__inner.encode(encoder)
+    }
+}
+
+impl<'a> der::Decode<'a> for PeSign {
+    fn decode<R: der::Reader<'a>>(decoder: &mut R) -> der::Result<Self> {
+        Self::from_reader(decoder)
+            .map_err(|_| der::Error::new(der::ErrorKind::Failed, der::Length::ZERO))
+    }
+}
+
+impl der::pem::PemLabel for PeSign {
+    const PEM_LABEL: &'static str = "PKCS7";
+}
+
+impl<'a> PeSign {
+    pub fn from_reader<R: der::Reader<'a>>(decoder: &mut R) -> Result<Self, PeSignError> {
+        let ci = ContentInfo::decode(decoder).map_app_err(PeSignErrorKind::InvalidContentInfo)?;
+
+        let __inner = ci.clone();
 
         // signedData
         match ci.content_type {
@@ -53,6 +74,7 @@ impl PeSign {
                             signed_data,
                             authenticode,
                             authenticode_digest,
+                            __inner,
                         })
                     }
                     _ => Err(PeSignError {
@@ -67,6 +89,12 @@ impl PeSign {
             }
             .into()),
         }
+    }
+
+    // 从导出的签名证书中提取签名信息
+    pub fn from_certificate_table_buf(bin: &[u8]) -> Result<Self, PeSignError> {
+        let mut reader = SliceReader::new(bin).map_unknown_err()?;
+        Self::from_reader(&mut reader)
     }
 
     // 验证证书是否有效
@@ -144,15 +172,10 @@ impl TryFrom<x509_cert::attr::Attribute> for Attribute {
     }
 }
 
-impl Attribute {
-    pub fn to_der(self: &Self) -> Result<Vec<u8>, PeSignError> {
-        self.__inner.to_der().map_unknown_err()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use cms::cert::x509::der::SliceReader;
+    use der::{DecodePem, EncodePem};
 
     use super::*;
 
@@ -173,13 +196,25 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_pkcs7() {
+    fn get_authenticode() {
         let bytes = include_bytes!("./examples/pkcs7.cer");
         let pesign = PeSign::from_certificate_table_buf(bytes).unwrap();
 
         assert_eq!(
             pesign.authenticode,
             "9253a6f72ee0e3970d5457e0f061fdb40b484f18"
+        );
+    }
+
+    #[test]
+    fn get_nested_authenticode() {
+        let bytes = include_bytes!("./examples/pkcs7.cer");
+        let pesign = PeSign::from_certificate_table_buf(bytes).unwrap();
+        let nested = pesign.signed_data.get_nested_signature().unwrap().unwrap();
+
+        assert_eq!(
+            nested.authenticode,
+            "33a755311b428c2063f983058dbf9e1648d00d5fec4adf00e0a34ddee639f68b",
         );
     }
 
@@ -216,6 +251,7 @@ mod tests {
                 .get_nested_signature()
                 .unwrap()
                 .unwrap()
+                .signed_data
                 .get_signature_time()
                 .unwrap()
                 .as_secs(),
@@ -232,5 +268,24 @@ mod tests {
             pesign.signed_data.get_signature_time().unwrap().as_secs(),
             1717347664
         );
+    }
+
+    #[test]
+    fn export_pem() {
+        let bytes = include_bytes!("./examples/pkcs7.cer");
+        let pesign = PeSign::from_certificate_table_buf(bytes).unwrap();
+
+        assert_eq!(
+            pesign.to_pem(Default::default()).unwrap(),
+            include_str!("./examples/pkcs7.pem")
+        );
+    }
+
+    #[test]
+    fn from_pem() {
+        let pem = include_str!("./examples/pkcs7.pem");
+        let result = PeSign::from_pem(pem);
+
+        assert!(result.is_ok())
     }
 }
