@@ -18,6 +18,7 @@ use crate::{
         CertificateChainBuilder, IssuerAndSerialNumber,
     },
     errors::{PeSignError, PeSignErrorKind, PeSignResult},
+    utils::{DisplayBytes, IndentString},
     Attributes, PeSign, PeSignStatus, VerifyOption, DEFAULT_TRUSTED_CA_PEM,
 };
 
@@ -37,6 +38,18 @@ impl From<cms::signed_data::SignerIdentifier> for SignerIdentifier {
                 Self::SubjectKeyIdentifier(skid.into())
             }
         }
+    }
+}
+
+impl Display for SignerIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Signer Identifier:")?;
+        let str = match self {
+            SignerIdentifier::IssuerAndSerialNumber(vv) => vv.to_string(),
+            SignerIdentifier::SubjectKeyIdentifier(vv) => vv.to_string(),
+        };
+
+        write!(f, "{}", str.indent(4))
     }
 }
 
@@ -82,6 +95,36 @@ impl TryFrom<cms::signed_data::SignerInfo> for SignerInfo {
             signature,
             digest_alg,
         })
+    }
+}
+
+impl Display for SignerInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Signer Info:")?;
+        writeln!(f, "{}", self.sid.to_string().indent(4))?;
+        if self.signed_attrs.is_some() {
+            writeln!(f, "{}", "Authenticated Attributes:".indent(4))?;
+            writeln!(
+                f,
+                "{}",
+                self.signed_attrs.clone().unwrap().to_string().indent(8)
+            )?;
+        }
+        if self.unsigned_attrs.is_some() {
+            writeln!(f, "{}", "Unauthenticated Attributes:".indent(4))?;
+            writeln!(
+                f,
+                "{}",
+                self.unsigned_attrs.clone().unwrap().to_string().indent(8)
+            )?;
+        }
+        writeln!(
+            f,
+            "{}",
+            format!("Digest Algorithm: {}", self.digest_alg).indent(4)
+        )?;
+        writeln!(f, "{}", "Encrypted Digest:".indent(4))?;
+        write!(f, "{}", self.signature.clone().to_bytes_string().indent(8))
     }
 }
 
@@ -132,7 +175,7 @@ impl SignerInfo {
         match &self.signed_attrs {
             // 如果存在 signed_attrs，使用 signature 和 publickey 对 signed_attrs 验签
             Some(signed_attrs) => {
-                let mut hasher = signer_cert.signature_algorithm.new_digest()?;
+                let mut hasher = self.digest_alg.new_digest()?;
                 hasher.update(&signed_attrs.to_der()?);
                 let hashed = hasher.finalize();
 
@@ -187,11 +230,8 @@ impl SignerInfo {
                 hasher.update(indata);
                 let hashed = hasher.finalize();
 
-                match rsa_publickey.verify(
-                    signer_cert.signature_algorithm.new_pkcs1v15sign()?,
-                    &hashed,
-                    signature,
-                ) {
+                match rsa_publickey.verify(self.digest_alg.new_pkcs1v15sign()?, &hashed, signature)
+                {
                     Ok(()) => { /*Validated*/ }
                     Err(_) => return Ok(PeSignStatus::Invalid),
                 }

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use der::{
     oid::{
         db::{
@@ -12,7 +14,7 @@ use x509_cert::ext::pkix::{CrlReason, KeyUsage};
 
 use crate::{
     errors::{PeSignError, PeSignErrorKind, PeSignResult},
-    utils::{to_hex_str, TryVecInto},
+    utils::{DisplayBytes, IndentString, TryVecInto},
 };
 
 use super::{
@@ -34,6 +36,22 @@ impl TryFrom<x509_cert::ext::Extensions> for Extensions {
             kind: PeSignErrorKind::InvalidCertificateExtension,
             message: err.to_string(),
         })?))
+    }
+}
+
+impl Display for Extensions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Extensions:")?;
+        write!(
+            f,
+            "{}",
+            self.0
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<String>>()
+                .join("\n")
+                .indent(4)
+        )
     }
 }
 
@@ -192,8 +210,74 @@ impl TryFrom<x509_cert::ext::Extension> for Extension {
     }
 }
 
+impl Display for Extension {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            Extension::AuthorityInfoAccess(vv) => vv.to_string(),
+            Extension::SubjectInfoAccess(vv) => vv.to_string(),
+            Extension::AuthorityKeyIdentifier(vv) => vv.to_string(),
+            Extension::SubjectKeyIdentifier(vv) => vv.to_string(),
+            Extension::CertificatePolicies(vv) => vv.to_string(),
+            Extension::BasicConstraints(vv) => vv.to_string(),
+            Extension::NameConstraints(vv) => vv.to_string(),
+            Extension::PolicyConstraints(vv) => vv.to_string(),
+            Extension::CrlNumber(vv) => vv.to_string(),
+            Extension::BaseCRLNumber(vv) => vv.to_string(),
+            Extension::CrlDistributionPoints(vv) => vv.to_string(),
+            Extension::FreshestCrl(vv) => vv.to_string(),
+            Extension::CRLReason(vv) => {
+                format!("CRL Reason: {:?}", vv)
+            }
+            Extension::KeyUsage(vv) => {
+                let mut kus = vec![];
+                if vv.crl_sign() {
+                    kus.push("CRL Sign");
+                }
+                if vv.data_encipherment() {
+                    kus.push("Data Encipherment");
+                }
+                if vv.decipher_only() {
+                    kus.push("Decipher Only");
+                }
+                if vv.digital_signature() {
+                    kus.push("Digital Signature");
+                }
+                if vv.encipher_only() {
+                    kus.push("Encipher Only");
+                }
+                if vv.key_agreement() {
+                    kus.push("Key Agreement");
+                }
+                if vv.key_cert_sign() {
+                    kus.push("Key Cert Sign");
+                }
+                if vv.key_encipherment() {
+                    kus.push("Key Encipherment");
+                }
+                if vv.non_repudiation() {
+                    kus.push("Non Repudiation");
+                }
+                format!("Key Usage:\n{}", kus.join(", ").indent(4))
+            }
+            Extension::ExtendedKeyUsage(vv) => vv.to_string(),
+            Extension::PrivateKeyUsagePeriod(vv) => vv.to_string(),
+            Extension::PolicyMappings(vv) => vv.to_string(),
+            Extension::SignedCertificateTimestampList(vv) => vv.to_string(),
+            Extension::SubjectAltName(vv) => vv.to_string(),
+            Extension::IssuerAltName(vv) => vv.to_string(),
+            Extension::SubjectDirectoryAttributes(vv) => vv.to_string(),
+            Extension::InhibitAnyPolicy(vv) => vv.to_string(),
+            Extension::Unknown(vv) => {
+                format!("Unknown:\n{}", vv.to_bytes_string().indent(4))
+            }
+        };
+
+        write!(f, "{}", str)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SubjectKeyIdentifier(pub String);
+pub struct SubjectKeyIdentifier(pub Vec<u8>);
 
 impl AssociatedOid for SubjectKeyIdentifier {
     const OID: ObjectIdentifier = ID_CE_SUBJECT_KEY_IDENTIFIER;
@@ -201,7 +285,14 @@ impl AssociatedOid for SubjectKeyIdentifier {
 
 impl From<x509_cert::ext::pkix::SubjectKeyIdentifier> for SubjectKeyIdentifier {
     fn from(value: x509_cert::ext::pkix::SubjectKeyIdentifier) -> Self {
-        Self(to_hex_str(value.0.as_bytes()))
+        Self(value.0.as_bytes().to_vec())
+    }
+}
+
+impl Display for SubjectKeyIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Subject Key Identifier:")?;
+        write!(f, "{}", self.0.clone().to_bytes_string().indent(4))
     }
 }
 
@@ -221,6 +312,12 @@ impl From<x509_cert::ext::pkix::CertificatePolicies> for CertificatePolicies {
     }
 }
 
+impl Display for CertificatePolicies {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Certificate Policies: <Unsupported>")
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SignedCertificateTimestampList(pub Vec<u8>);
 
@@ -233,5 +330,11 @@ impl From<x509_cert::ext::pkix::SignedCertificateTimestampList> for SignedCertif
         let mut buf = vec![];
         value.encode_to_vec(&mut buf).unwrap();
         Self(buf)
+    }
+}
+
+impl Display for SignedCertificateTimestampList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Signed Certificate Timestamp List: <Unsupported>")
     }
 }

@@ -1,4 +1,4 @@
-use std::{ops::Range, path::Path};
+use std::{fmt::Display, ops::Range, path::Path};
 
 use asn1_types::SpcIndirectDataContent;
 use cert::Algorithm;
@@ -10,7 +10,7 @@ use der::{asn1::SetOfVec, Encode, EncodePem};
 use errors::{PeSignError, PeSignErrorKind, PeSignResult};
 use exe::{Buffer, ImageDataDirectory, ImageDirectoryEntry, NTHeaders, VecPE, PE};
 use signed_data::SignedData;
-use utils::{to_hex_str, TryVecInto};
+use utils::{to_hex_str, DisplayBytes, IndentString, TryVecInto};
 
 pub mod asn1_types;
 pub mod cert;
@@ -344,6 +344,20 @@ impl TryFrom<x509_cert::attr::Attributes> for Attributes {
     }
 }
 
+impl Display for Attributes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.0
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<String>>()
+                .join("\n")
+        )
+    }
+}
+
 impl Attributes {
     pub fn to_der(self: &Self) -> Result<Vec<u8>, PeSignError> {
         let mut result = SetOfVec::<x509_cert::attr::Attribute>::new();
@@ -378,6 +392,13 @@ impl TryFrom<x509_cert::attr::Attribute> for Attribute {
             values: values,
             __inner: attr,
         })
+    }
+}
+
+impl Display for Attribute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}:", self.oid)?;
+        write!(f, "{}", self.values.concat().to_bytes_string().indent(4))
     }
 }
 

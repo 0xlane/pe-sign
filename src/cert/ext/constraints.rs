@@ -1,9 +1,11 @@
+use std::fmt::Display;
+
 use der::oid::{
     db::rfc5280::{ID_CE_BASIC_CONSTRAINTS, ID_CE_NAME_CONSTRAINTS, ID_CE_POLICY_CONSTRAINTS},
     AssociatedOid, ObjectIdentifier,
 };
 
-use crate::utils::{OptionInto, VecInto};
+use crate::utils::{IndentString, OptionInto, VecInto};
 
 use super::name::GeneralName;
 
@@ -22,6 +24,28 @@ impl From<x509_cert::ext::pkix::BasicConstraints> for BasicConstraints {
         Self {
             ca: value.ca,
             path_len_constraint: value.path_len_constraint,
+        }
+    }
+}
+
+impl Display for BasicConstraints {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Basic Constraints:")?;
+        match self.path_len_constraint {
+            Some(len) => {
+                write!(
+                    f,
+                    "{}",
+                    format!("ca:{}, pathlen:{}", self.ca.to_string().to_uppercase(), len).indent(4)
+                )
+            }
+            None => {
+                write!(
+                    f,
+                    "{}",
+                    format!("ca:{}", self.ca.to_string().to_uppercase()).indent(4)
+                )
+            }
         }
     }
 }
@@ -45,6 +69,36 @@ impl From<x509_cert::ext::pkix::PolicyConstraints> for PolicyConstraints {
     }
 }
 
+impl Display for PolicyConstraints {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Policy Constraints:")?;
+        if self.require_explicit_policy.is_some() {
+            write!(
+                f,
+                "\n{}",
+                format!(
+                    "Require Explicit Policy: {}",
+                    self.require_explicit_policy.unwrap()
+                )
+                .indent(4)
+            )?;
+        }
+        if self.inhibit_policy_mapping.is_some() {
+            write!(
+                f,
+                "\n{}",
+                format!(
+                    "Inhibit Policy Mapping: {}",
+                    self.inhibit_policy_mapping.unwrap()
+                )
+                .indent(4)
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NameConstraints {
     pub permitted_subtrees: Option<GeneralSubtrees>,
@@ -64,12 +118,53 @@ impl From<x509_cert::ext::pkix::NameConstraints> for NameConstraints {
     }
 }
 
+impl Display for NameConstraints {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.permitted_subtrees {
+            Some(permitted) => {
+                writeln!(f, "Permitted:")?;
+                write!(f, "{}", permitted.to_string().indent(4))?;
+            }
+            None => {}
+        }
+
+        match &self.excluded_subtrees {
+            Some(excluded) => {
+                if self.permitted_subtrees.is_some() {
+                    writeln!(f)?;
+                }
+                writeln!(f, "Excluded:")?;
+                write!(f, "{}", excluded.to_string().indent(4))?;
+            }
+            None => {}
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GeneralSubtrees(pub Vec<GeneralSubtree>);
 
 impl From<x509_cert::ext::pkix::constraints::name::GeneralSubtrees> for GeneralSubtrees {
     fn from(value: x509_cert::ext::pkix::constraints::name::GeneralSubtrees) -> Self {
         Self(value.vec_into())
+    }
+}
+
+impl Display for GeneralSubtrees {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.0
+                .clone()
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<String>>()
+                .join("\n")
+                .indent(4)
+        )
     }
 }
 
@@ -87,5 +182,11 @@ impl From<x509_cert::ext::pkix::constraints::name::GeneralSubtree> for GeneralSu
             minimum: value.minimum,
             maximum: value.maximum,
         }
+    }
+}
+
+impl Display for GeneralSubtree {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.base)
     }
 }

@@ -87,15 +87,15 @@ where
 }
 
 pub trait DisplayBytes {
-    fn to_string(self) -> String;
+    fn to_bytes_string(self) -> String;
 }
 
 impl<T> DisplayBytes for T
 where
     T: AsRef<[u8]>,
 {
-    fn to_string(self) -> String {
-        const LINE_SIZE: usize = 18;
+    fn to_bytes_string(self) -> String {
+        const LINE_SIZE: usize = 20;
         #[cfg(target_os = "windows")]
         const NEWLINE: &str = "\r\n";
 

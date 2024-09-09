@@ -1,11 +1,12 @@
-use std::{ops::Deref, time::UNIX_EPOCH};
+use std::ops::Deref;
 
+use chrono::Utc;
 use rsa::pkcs1::DecodeRsaPublicKey;
 
 use crate::{
     errors::{PeSignError, PeSignErrorKind, PeSignResult},
     signed_data::SignerIdentifier,
-    utils::to_hex_str,
+    utils::{to_hex_str, DisplayBytes},
 };
 
 use super::{ext::Extension, name::RdnSequence, Algorithm, Certificate};
@@ -105,7 +106,7 @@ impl CertificateChainBuilder {
                     None => {
                         return Err(PeSignError {
                             kind: PeSignErrorKind::UnknownSigner,
-                            message: to_hex_str(sid.0.as_bytes()),
+                            message: sid.0.to_bytes_string(),
                         });
                     }
                 }
@@ -189,9 +190,7 @@ impl CertificateChain {
             let start_time = cert.validity.not_before;
             let end_time = cert.validity.not_after;
 
-            let cur_time = std::time::SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_unknown_err()?;
+            let cur_time = Utc::now();
 
             if cur_time < start_time || cur_time > end_time {
                 return Ok(true);

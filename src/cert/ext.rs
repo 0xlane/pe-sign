@@ -1,5 +1,3 @@
-use crate::utils::VecInto;
-
 pub mod constraints;
 pub mod crl;
 pub mod name;
@@ -9,6 +7,8 @@ mod authkeyid;
 mod extension;
 mod keyusage;
 mod policymap;
+
+use std::fmt::Display;
 
 pub use access::{AccessDescription, AuthorityInfoAccess, SubjectInfoAccess};
 pub use authkeyid::AuthorityKeyIdentifier;
@@ -37,7 +37,14 @@ impl AssociatedOid for SubjectAltName {
 
 impl From<x509_cert::ext::pkix::SubjectAltName> for SubjectAltName {
     fn from(value: x509_cert::ext::pkix::SubjectAltName) -> Self {
-        Self(value.0.vec_into())
+        Self(value.0.into())
+    }
+}
+
+impl Display for SubjectAltName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Subject Alternative Name:")?;
+        write!(f, "{}", self.0.to_string().indent(4))
     }
 }
 
@@ -50,7 +57,14 @@ impl AssociatedOid for IssuerAltName {
 
 impl From<x509_cert::ext::pkix::IssuerAltName> for IssuerAltName {
     fn from(value: x509_cert::ext::pkix::IssuerAltName) -> Self {
-        Self(value.0.vec_into())
+        Self(value.0.into())
+    }
+}
+
+impl Display for IssuerAltName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Issuer Alternative Name:")?;
+        write!(f, "{}", self.0.to_string().indent(4))
     }
 }
 
@@ -67,6 +81,12 @@ impl From<x509_cert::ext::pkix::SubjectDirectoryAttributes> for SubjectDirectory
     }
 }
 
+impl Display for SubjectDirectoryAttributes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Subject Directory Attributes: <Unsupported>")
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InhibitAnyPolicy(pub u32);
 
@@ -80,4 +100,12 @@ impl From<x509_cert::ext::pkix::InhibitAnyPolicy> for InhibitAnyPolicy {
     }
 }
 
+impl Display for InhibitAnyPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Inhibit Any Policy: {}", self.0)
+    }
+}
+
 pub use der::oid::AssociatedOid;
+
+use crate::utils::IndentString;

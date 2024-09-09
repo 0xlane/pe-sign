@@ -1,5 +1,6 @@
-use std::{fmt::Display, io::Read, time::Duration};
+use std::{fmt::Display, io::Read};
 
+use chrono::{DateTime, Local, Utc};
 use der::{
     oid::db::rfc5912::{
         ID_SHA_1, ID_SHA_224, ID_SHA_256, ID_SHA_384, ID_SHA_512, RSA_ENCRYPTION,
@@ -62,7 +63,33 @@ impl der::pem::PemLabel for Certificate {
 
 impl Display for Certificate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        writeln!(f, "Certificate:")?;
+        writeln!(f, "{}", "Data:".indent(4))?;
+        writeln!(
+            f,
+            "{}",
+            format!("Version: {} (0x{:x})", self.version + 1, self.version).indent(8)
+        )?;
+        writeln!(f, "{}", "Serial Number:".indent(8))?;
+        writeln!(f, "{}", self.serial_number.clone().to_bytes_string().indent(12))?;
+        writeln!(f, "{}", format!("Issuer: {}", self.issuer).indent(8))?;
+        writeln!(f, "{}", self.validity.to_string().indent(8))?;
+        writeln!(f, "{}", format!("Subject: {}", self.subject).indent(8))?;
+        writeln!(f, "{}", self.subject_public_key_info.to_string().indent(8))?;
+        if self.extensions.is_some() {
+            writeln!(
+                f,
+                "{}",
+                self.extensions.clone().unwrap().to_string().indent(8)
+            )?;
+        }
+        writeln!(
+            f,
+            "{}",
+            format!("Signature Algorithm: {}", self.signature_algorithm).indent(4)
+        )?;
+        writeln!(f, "{}", "Signature Value:".indent(4))?;
+        write!(f, "{}", self.signature_value.clone().to_bytes_string().indent(12))
     }
 }
 
@@ -285,16 +312,26 @@ impl Algorithm {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Validity {
-    pub not_before: Duration,
-    pub not_after: Duration,
+    pub not_before: DateTime<Utc>,
+    pub not_after: DateTime<Utc>,
 }
 
 impl From<x509_cert::time::Validity> for Validity {
     fn from(value: x509_cert::time::Validity) -> Self {
         Self {
-            not_before: value.not_before.to_unix_duration(),
-            not_after: value.not_after.to_unix_duration(),
+            not_before: value.not_before.to_system_time().into(),
+            not_after: value.not_after.to_system_time().into(),
         }
+    }
+}
+
+impl Display for Validity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let start_time = self.not_before.with_timezone(&Local);
+        let end_time = self.not_after.with_timezone(&Local);
+
+        writeln!(f, "Not Before: {}", start_time)?;
+        write!(f, "Not After : {}", end_time)
     }
 }
 
@@ -370,7 +407,7 @@ impl Display for SubjectPublicKeyInfo {
             )
             .indent(4)
         )?;
-        writeln!(f, "{}", self.get_public_key_modules().to_string().indent(8))
+        write!(f, "{}", self.get_public_key_modules().to_bytes_string().indent(8))
     }
 }
 

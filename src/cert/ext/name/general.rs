@@ -1,8 +1,31 @@
+use std::fmt::Display;
+
 use der::asn1::Utf8StringRef;
 
-use crate::utils::to_hex_str;
+use crate::utils::{to_hex_str, VecInto};
 
-pub type GeneralNames = Vec<GeneralName>;
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GeneralNames(pub Vec<GeneralName>);
+
+impl From<x509_cert::ext::pkix::name::GeneralNames> for GeneralNames {
+    fn from(value: x509_cert::ext::pkix::name::GeneralNames) -> Self {
+        Self(value.vec_into())
+    }
+}
+
+impl Display for GeneralNames {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.0
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GeneralName {
@@ -65,11 +88,30 @@ impl From<x509_cert::ext::pkix::name::GeneralName> for GeneralName {
                 Self::UniformResourceIdentifier(name.to_string())
             }
             x509_cert::ext::pkix::name::GeneralName::IpAddress(name) => {
-                Self::IpAddress(to_hex_str(name.as_bytes()))
+                Self::IpAddress(to_hex_str(name.as_bytes())) /* TODO */
             }
             x509_cert::ext::pkix::name::GeneralName::RegisteredId(name) => {
                 Self::RegisteredId(name.to_string())
             }
         }
+    }
+}
+
+impl Display for GeneralName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::OtherName(vv) => format!("othername:{}", vv),
+                Self::Rfc822Name(vv) => format!("email:{}", vv),
+                Self::DnsName(vv) => format!("DNS:{}", vv),
+                Self::DirectoryName(vv) => format!("DirName:{}", vv),
+                Self::EdiPartyName(vv) => format!("EdiPartyName:{}", vv),
+                Self::UniformResourceIdentifier(vv) => format!("URI:{}", vv),
+                Self::IpAddress(vv) => format!("IP Address:{}", vv),
+                Self::RegisteredId(vv) => format!("RID: {}", vv),
+            }
+        )
     }
 }

@@ -55,6 +55,17 @@ fn cli() -> clap::Command {
                         .default_value("sha256"),
                 ]),
         )
+        .subcommand(
+            Command::new("print")
+                .about("Print the certificate information of a PE file.")
+                .args(&[
+                    arg!([FILE])
+                        .value_parser(value_parser!(PathBuf))
+                        .required(true),
+                    arg!(--"signer-info" "Print the signer info of a PE file."),
+                    arg!(-a --all "Include nested signature."),
+                ]),
+        )
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -130,8 +141,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                             }
                         )?
                     );
-
-                    println!("{}", pesign.signed_data.cert_list[0].subject_public_key_info);
                 }
                 None => {
                     println!("The file is no signed!!");
@@ -157,6 +166,64 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "{}",
                 PeSign::calc_authenticode_from_pe_path(&file, &algorithm)?
             );
+
+            Ok(())
+        }
+        Some(("print", sub_matches)) => {
+            let file = sub_matches.get_one::<PathBuf>("FILE").unwrap();
+            let all = sub_matches.get_flag("all");
+            let print_signer = sub_matches.get_flag("signer-info");
+
+            match PeSign::from_pe_path(file)? {
+                Some(pesign) => {
+                    if print_signer {
+                        println!("{}", pesign.signed_data.signer_info);
+
+                        if all {
+                            match pesign.signed_data.get_nested_signature()? {
+                                Some(nested) => {
+                                    println!("============");
+                                    println!("{}", nested.signed_data.signer_info);
+                                }
+                                None => {}
+                            }
+                        }
+                    } else {
+                        println!(
+                            "{}",
+                            pesign
+                                .signed_data
+                                .cert_list
+                                .iter()
+                                .map(|v| v.to_string())
+                                .collect::<Vec<String>>()
+                                .join("\n\n")
+                        );
+
+                        if all {
+                            match pesign.signed_data.get_nested_signature()? {
+                                Some(nested) => {
+                                    println!("============");
+                                    println!(
+                                        "{}",
+                                        nested
+                                            .signed_data
+                                            .cert_list
+                                            .iter()
+                                            .map(|v| v.to_string())
+                                            .collect::<Vec<String>>()
+                                            .join("\n\n")
+                                    );
+                                }
+                                None => {}
+                            }
+                        }
+                    }
+                }
+                None => {
+                    println!("The file is no signed!!");
+                }
+            }
 
             Ok(())
         }
