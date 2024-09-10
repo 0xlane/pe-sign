@@ -1,6 +1,6 @@
 [package]
 name = "pe-sign"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["REinject"]
 homepage = "https://github.com/0xlane/pe-sign"

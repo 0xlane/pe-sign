@@ -30,7 +30,7 @@ Download the binary for your platform from the Releases page. On Linux and macOS
 ### Usage
 
 ```powershell
-pe-sign (0.1.0) - REinject
+pe-sign (0.1.1) - REinject
 A tool for parsing and verifing PE file signatures
 
 Repository: https://github.com/0xlane/pe-sign
