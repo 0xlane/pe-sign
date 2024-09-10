@@ -11,20 +11,16 @@ use crate::{
 
 use super::{ext::Extension, name::RdnSequence, Algorithm, Certificate};
 
-// 证书链构建器
+/// Build a [`CertificateChain`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertificateChainBuilder {
-    // 受信任的 CA 证书
     trusted_ca_certs: Option<Vec<Certificate>>,
-
-    // 用于构建证书链的证书列表
     cert_list: Option<Vec<Certificate>>,
-
-    // 签名者ID
     sid: Option<SignerIdentifier>,
 }
 
 impl CertificateChainBuilder {
+    /// Create a [`CertificateChainBuilder`].
     pub fn new() -> Self {
         Self {
             trusted_ca_certs: None,
@@ -124,7 +120,7 @@ impl CertificateChainBuilder {
         })
     }
 
-    // 根据签名者证书从提供的证书列表中构建证书链
+    /// Build a certificate chain from the provided certificate list using the signer certificate.
     fn build_chain(cert_list: &[Certificate], signer_cert: &Certificate) -> Vec<Certificate> {
         let mut cert_chain = vec![signer_cert.clone()];
         match signer_cert.is_selfsigned() {
@@ -140,30 +136,26 @@ impl CertificateChainBuilder {
     }
 }
 
-/// 证书链结构
-/// 用于验证证书链是否可信
+/// Certificate Chain.
+/// It's used to verify the integrity of a certificate chain.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertificateChain {
-    // 受信任的 CA 证书
     trusted_ca_certs: Vec<Certificate>,
-
-    // 证书链
     cert_chain: Vec<Certificate>,
-    // 签名算法
 }
 
 impl CertificateChain {
-    // 返回一个证书链的迭代器
+    /// Get a iterater of the certificate chain.
     pub fn iter(self: &Self) -> std::slice::Iter<'_, Certificate> {
         self.cert_chain.iter()
     }
 
-    // 返回证书链引用
+    /// Get a ref of the certificate chain.
     pub fn get_chain(self: &Self) -> &[Certificate] {
         &self
     }
 
-    // 返回可信证书列表
+    /// Get the trusted ca certificate list.
     pub fn get_trusted_ca_list(self: &Self) -> &[Certificate] {
         &self.trusted_ca_certs
     }
@@ -184,7 +176,7 @@ impl Deref for CertificateChain {
 }
 
 impl CertificateChain {
-    // 证书是否过期
+    /// Check if it's expired.
     pub fn is_expired(self: &Self) -> Result<bool, PeSignError> {
         for cert in &self.cert_chain {
             let start_time = cert.validity.not_before;
@@ -200,7 +192,7 @@ impl CertificateChain {
         Ok(false)
     }
 
-    // 验证证书链是否可信（不验证有效时间）
+    /// Check if it's trusted. (No check timestamp)
     pub fn is_trusted(self: &Self) -> Result<bool, PeSignError> {
         if self.cert_chain.len() < 2 {
             // 小于2个证书直接判定为不可信

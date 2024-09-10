@@ -1,3 +1,33 @@
+//! > **PE Signature Parser for Rust**
+//!
+//! `pe-sign` is a cross-platform tool developed in Rust, designed for parsing and verifying digital signatures 
+//! in PE files. It provides a simple command-line interface that supports extracting certificates, verifying 
+//! digital signatures, calculating Authenticode digests, and printing certificate information. It can be used 
+//! as a standalone command-line tool or integrated into your Rust project as a dependency.
+//! 
+//! CommandLine Tool Document: [README.md](https://github.com/0xlane/pe-sign).
+//! 
+//! ## Example
+//!
+//! Run
+//! ```console
+//! $ cargo add pesign
+//! ```
+//!
+//! Then use `pesign` and parse PE file sigature to [`PeSign`] struct in `main.rs`:
+//! ```rust
+//! use pesign::PeSign;
+//! 
+//! fn main() {
+//!     if let Some(pesign) = PeSign::from_pe_path("test.exe").unwarp() {
+//!         // Add your program logic.
+//!     } else {
+//!         println!("The file is no signed!!");
+//!     }
+//! }
+//! ```
+//!
+
 use std::{fmt::Display, ops::Range, path::Path};
 
 use asn1_types::SpcIndirectDataContent;
@@ -21,6 +51,21 @@ pub mod signed_data;
 pub mod utils;
 pub use der;
 
+/// Obtaining a PE file's signature
+/// 
+/// This includes all the information in the PE signature: certificate list, signer information, and Authenticode.
+/// 
+/// You can retrieve the signature data from a specified PE file path using [`PeSign::from_pe_path`], or parse it 
+/// from an exported signature byte array using [`PeSign::from_certificate_table_buf`].
+/// 
+/// Example:
+/// 
+/// ```no_run
+/// use pesign::PeSign;
+/// 
+/// let pesign = PeSign::from_pe_path("test.exe").unwrap().unwrap();
+/// println!("{}", pesign.signed_data.signer_info);
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PeSign {
     pub signed_data: SignedData,
@@ -96,27 +141,27 @@ impl<'a> PeSign {
         }
     }
 
-    // 从导出的签名证书中提取签名信息
+    /// Extract signature information from the exported certificate.
     pub fn from_certificate_table_buf(bin: &[u8]) -> Result<Self, PeSignError> {
         let mut reader = SliceReader::new(bin).map_unknown_err()?;
         Self::from_reader(&mut reader)
     }
 
-    // 从 PE 文件中提取签名信息
+    /// Extract signature information from a disk file.
     pub fn from_pe_path<P: AsRef<Path>>(filename: P) -> Result<Option<Self>, PeSignError> {
         let image = VecPE::from_disk_file(filename).map_app_err(PeSignErrorKind::IoError)?;
 
         Self::from_vecpe(&image)
     }
 
-    // 从 PE 数据中提取签名信息
+    /// Extract signature information from a memory pe data.
     pub fn from_pe_data(bin: &[u8]) -> Result<Option<Self>, PeSignError> {
         let image = VecPE::from_disk_data(bin);
 
         Self::from_vecpe(&image)
     }
 
-    // 从 VecPE 提取签名信息
+    /// Extract signature information from [`VecPE`].
     pub fn from_vecpe(image: &VecPE) -> Result<Option<Self>, PeSignError> {
         // va = 0 表示无签名
         let security_directory = image
@@ -137,7 +182,7 @@ impl<'a> PeSign {
         Ok(Some(Self::from_certificate_table_buf(&pkcs7)?))
     }
 
-    // 计算 PE 文件 authenticode
+    /// Calculate authenticode from a disk file.
     pub fn calc_authenticode_from_pe_path<P: AsRef<Path>>(
         filename: P,
         algorithm: &Algorithm,
@@ -147,7 +192,7 @@ impl<'a> PeSign {
         Self::calc_authenticode_from_vecpe(&image, algorithm)
     }
 
-    // 计算 PE 文件 authenticode
+    /// Calculate authenticode from a memory pe data.
     pub fn calc_authenticode_from_pe_data(
         bin: &[u8],
         algorithm: &Algorithm,
@@ -157,7 +202,7 @@ impl<'a> PeSign {
         Self::calc_authenticode_from_vecpe(&image, algorithm)
     }
 
-    // 计算 PE 文件 authenticode
+    /// Calculate authenticode from [`VecPE`].
     pub fn calc_authenticode_from_vecpe(
         image: &VecPE,
         algorithm: &Algorithm,
@@ -242,12 +287,12 @@ impl<'a> PeSign {
         Ok(to_hex_str(&result))
     }
 
-    // 验证证书是否有效
+    /// Verify the validity of the certificate.
     pub fn verify(self: &Self, option: &VerifyOption) -> Result<PeSignStatus, PeSignError> {
         self.signed_data.verify(option)
     }
 
-    // 验证 PE 是否被篡改
+    /// Verify the validity of the certificate.
     pub fn verify_pe_path<P: AsRef<Path>>(
         self: &Self,
         filename: P,
@@ -258,7 +303,7 @@ impl<'a> PeSign {
         self.verify_vecpe(&image, option)
     }
 
-    // 验证 PE 是否被篡改
+    /// Verify the validity of the certificate.
     pub fn verify_pe_data(
         self: &Self,
         bin: &[u8],
@@ -269,7 +314,7 @@ impl<'a> PeSign {
         self.verify_vecpe(&image, option)
     }
 
-    // 验证 PE 是否被篡改
+    /// Verify the validity of the certificate.
     pub fn verify_vecpe(
         self: &Self,
         image: &VecPE,
@@ -285,31 +330,31 @@ impl<'a> PeSign {
         }
     }
 
-    // 导出为 DER
+    /// Export as DER.
     pub fn export_der(self: &Self) -> Result<Vec<u8>, PeSignError> {
         self.to_der().map_app_err(PeSignErrorKind::ExportDerError)
     }
 
-    // 导出为 PEM
+    /// Export as PEM.
     pub fn export_pem(self: &Self) -> Result<String, PeSignError> {
         self.to_pem(Default::default())
             .map_app_err(PeSignErrorKind::ExportPemError)
     }
 }
 
-// 签名状态
+/// PE Signature Status.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeSignStatus {
-    // 不受信任的证书链
+    /// Untrusted Certificate Chain.
     UntrustedCertificateChain,
 
-    // 证书过期
+    /// Expired Certificate.
     Expired,
 
-    // 证书无效
+    /// Invalid Certificate.
     Invalid,
 
-    // 证书有效
+    /// Valid Certificate.
     Valid,
 }
 
@@ -513,7 +558,7 @@ mod tests {
             pesign
                 .signed_data
                 .signer_info
-                .get_signature_time()
+                .get_signing_time()
                 .unwrap()
                 .as_secs(),
             1459215302
@@ -534,7 +579,7 @@ mod tests {
                 .unwrap()
                 .signed_data
                 .signer_info
-                .get_signature_time()
+                .get_signing_time()
                 .unwrap()
                 .as_secs(),
             1459215303
@@ -550,7 +595,7 @@ mod tests {
             pesign
                 .signed_data
                 .signer_info
-                .get_signature_time()
+                .get_signing_time()
                 .unwrap()
                 .as_secs(),
             1717347664

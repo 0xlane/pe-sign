@@ -229,6 +229,20 @@ Options:
 cargo add pe-sign
 ```
 
+然后在 `main.rs` 导入 `pesign` 并且解析为 `PeSign` 结构：
+
+```rust
+use pesign::PeSign;
+
+fn main() {
+    if let Some(pesign) = PeSign::from_pe_path("test.exe").unwarp() {
+        // Add your program logic.
+    } else {
+        println!("The file is no signed!!");
+    }
+}
+```
+
 ## 贡献
 
 如果你发现问题或者有新的功能建议，欢迎提交 [Issue](https://github.com/0xlane/pe-sign/issues) 或发起 Pull Request。

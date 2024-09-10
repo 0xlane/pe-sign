@@ -2,79 +2,79 @@ use std::fmt;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeSignErrorKind {
-    // IO 错误
+    /// IO Error.
     IoError,
 
-    // 无效的 PE 文件
+    /// Invalid PE File.
     InvalidPeFile,
 
-    // 无效的证书内容
+    /// Invalid Certificate ContentInfo.
     InvalidContentInfo,
 
-    // 无效的内容类型
+    /// Invalid ContentType.
     InvalidContentType,
 
-    // 无效的 signedData
+    /// Invalid SignedData.
     InvalidSignedData,
 
-    // 无效的签名封装内容类型
+    /// Invalid Encapsulated ContentType.
     InvalidEncapsulatedContentType,
 
-    // 空的封装数据
+    /// Empty EncapsulatedContent.
     EmptyEncapsulatedContent,
 
-    // 无效的签名封装内容
+    /// Invalid SpcIndirectDataContent.
     InvalidSpcIndirectDataContent,
 
-    // 空的证书
+    /// Empty Certificate.
     EmptyCertificate,
 
-    // 不支持的证书格式
+    /// Unsupported Certificate Format.
     UnsupportedCertificateFormat,
 
-    // 不支持的算法
+    /// Unsupported Algorithm.
     UnsupportedAlgorithm,
 
-    // 无效的证书拓展
+    /// Invalid Certificate Extension.
     InvalidCertificateExtension,
 
-    // 错误的证书链构建参数
+    /// Wrong Certificate Chain Build Param.
     WrongCertChainBuildParam,
 
-    // 无效的 PEM 证书
+    /// Invalid PEM Certificate.
     InvalidPEMCertificate,
 
-    // 无效的公钥
+    /// Invalid Public Key.
     InvalidPublicKey,
 
-    // 找不到签名者信息
+    /// No Found SignerInfo.
     NoFoundSignerInfo,
 
-    // 未知签名者
+    /// Unknown Signer.
     UnknownSigner,
 
-    // 不存在消息摘要
+    /// No Found Message Digest.
     NoFoundMessageDigest,
 
-    // 无效的副署签名
+    /// Invalid Counter Signature.
     InvalidCounterSignature,
 
-    // 无效的签名时间
+    /// Invalid SigningTime.
     InvalidSigningTime,
 
-    // 找不到签名时间
+    /// No Found SigningTime.
     NoFoundSigningTime,
 
-    // 无效的TSTInfo
+    /// Invalid TSTInfo.
     InvalidTSTInfo,
 
-    // 导出 DER 错误
+    /// Export as DER Error.
     ExportDerError,
 
-    // 导出 PEM 错误
+    /// Export as PEM Error.
     ExportPemError,
 
-    // 未知错误
+    /// Unknown Error.
     Unknown,
 }
 

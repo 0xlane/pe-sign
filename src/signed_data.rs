@@ -53,12 +53,24 @@ impl Display for SignerIdentifier {
     }
 }
 
+/// Parse SignerInfo.
+/// 
+/// This includes the signer information of a PE signature.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SignerInfo {
+    /// Signer Identifier
+    /// 
+    /// This ID refers to a certificate in the [`SignedData::cert_list`].
     pub sid: SignerIdentifier,
+    /// Authenticated Attributes.
+    /// 
+    /// It can be verified using a signature and [`SignerInfo::sid`]'s corresponding certificate chain.
     pub signed_attrs: Option<Attributes>, // authenticatedAttributes
+    /// Unauthenticated Attributes.
     pub unsigned_attrs: Option<Attributes>, // unauthenticatedAttributes
+    /// [`SignerInfo::signed_attrs`]'s signature.
     pub signature: Vec<u8>,               // encryptedDigest
+    /// Sigature Algorithm
     pub digest_alg: Algorithm,            // digestAlgorithm
 }
 
@@ -133,6 +145,9 @@ impl Display for SignerInfo {
 }
 
 impl SignerInfo {
+    /// Verifying the integrity of the `indata` using the [`SignerInfo`].
+    /// 
+    /// `cert_list` is a list of certificates with sid and its parent certificates.
     pub fn verify(
         self: &Self,
         cert_list: &[Certificate],
@@ -245,7 +260,7 @@ impl SignerInfo {
         Ok(PeSignStatus::Valid)
     }
 
-    // 从签名属性中获取副署签名信息
+    /// Get countersignature.
     pub fn get_countersignature(self: &Self) -> Result<Option<Self>, PeSignError> {
         match &self.unsigned_attrs {
             Some(unsigned_attrs) => {
@@ -268,7 +283,7 @@ impl SignerInfo {
         }
     }
 
-    // 获取微软 TST 签名
+    /// Get microsoft TSTInfo signature.
     pub fn get_ms_tst_signature(self: &Self) -> Result<Option<SignedData>, PeSignError> {
         match &self.unsigned_attrs {
             Some(unsigned_attrs) => {
@@ -310,7 +325,7 @@ impl SignerInfo {
         }
     }
 
-    // 获取内嵌签名
+    /// Get nested signature in a [`SignedData`].
     pub fn get_nested_signature(self: &Self) -> Result<Option<PeSign>, PeSignError> {
         match &self.unsigned_attrs {
             Some(unsigned_attrs) => {
@@ -332,7 +347,7 @@ impl SignerInfo {
         }
     }
 
-    // 获取副署签名者信息
+    /// Get countersigner infomation.
     pub fn get_countersigner_info(self: &Self) -> Result<Option<Self>, PeSignError> {
         match self.get_countersignature()? {
             Some(cs) => Ok(Some(cs)),
@@ -343,8 +358,8 @@ impl SignerInfo {
         }
     }
 
-    // 得到签名时间
-    pub fn get_signature_time(self: &Self) -> Result<Duration, PeSignError> {
+    ///Get signing time.
+    pub fn get_signing_time(self: &Self) -> Result<Duration, PeSignError> {
         fn get_signing_time_from_attr(
             signed_attrs: &Option<Attributes>,
         ) -> Result<Option<Duration>, PeSignError> {
@@ -441,6 +456,9 @@ impl TryFrom<cms::signed_data::EncapsulatedContentInfo> for EncapsulatedContentI
     }
 }
 
+/// Signed Data.
+/// 
+/// This includes the all signature information: message digest、signer info、cert list.
 #[derive(Clone, Eq, PartialEq)]
 pub struct SignedData {
     pub encap_content_info: EncapsulatedContentInfo, // messageDigest
@@ -526,7 +544,7 @@ impl Debug for SignedData {
 }
 
 impl SignedData {
-    // 获取证书链
+    /// Build signer certificate chain.
     pub fn build_certificate_chain(
         self: &Self,
         ca_pem: Option<&str>,
@@ -544,7 +562,7 @@ impl SignedData {
         Ok(cert_chain)
     }
 
-    // 构建副署签名证书链
+    /// Build countersigner certificate chain.
     pub fn build_contersignature_cert_chain(
         self: &Self,
         ca_pem: Option<&str>,
@@ -580,7 +598,7 @@ impl SignedData {
         }
     }
 
-    // 验证签名有效性
+    /// Verify the validity of the signed data.
     pub fn verify(self: &Self, option: &VerifyOption) -> Result<PeSignStatus, PeSignError> {
         self.signer_info.verify(
             &self.cert_list,

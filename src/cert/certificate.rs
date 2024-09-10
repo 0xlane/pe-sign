@@ -24,6 +24,8 @@ use super::{
     name::RdnSequence,
 };
 
+
+/// Parse Certificate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Certificate {
     pub version: u8,
@@ -94,7 +96,7 @@ impl Display for Certificate {
 }
 
 impl Certificate {
-    // 从 PEM 文件导入证书
+    /// Import certificate from pem str.
     pub fn load_pem_chain(input: &str) -> Result<Vec<Self>, PeSignError> {
         fn find_boundary<T>(haystack: &[T], needle: &[T]) -> Option<usize>
         where
@@ -161,7 +163,7 @@ impl Certificate {
         Ok(certs)
     }
 
-    // 是否是 CA 证书
+    /// Check if it's a CA certificate.
     pub fn is_ca(self: &Self) -> bool {
         match &self.extensions {
             Some(extensions) => {
@@ -177,7 +179,7 @@ impl Certificate {
         }
     }
 
-    // 是否是自签名证书
+    /// Check if it's a selfsign certificate.
     pub fn is_selfsigned(self: &Self) -> bool {
         if self.issuer == self.subject {
             true
@@ -186,7 +188,8 @@ impl Certificate {
         }
     }
 
-    // 返回 tbs_certificate，用于验证证书是否可信，signature 解密后为 tbs_certificate 的 hash
+    /// Get the tbs_certificate binary data for validating its trustworthiness, 
+    /// and the decrypted signature is the hash of tbs_certificate.
     pub fn get_tbs_certificate_bytes(self: &Self) -> Vec<u8> {
         self.__inner.tbs_certificate.to_der().unwrap()
     }

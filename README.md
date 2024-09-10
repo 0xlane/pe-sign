@@ -229,6 +229,20 @@ You can also integrate `pe-sign` into your project as a dependency. Add it using
 cargo add pe-sign
 ```
 
+Then use `pesign` and parse PE file sigature to `PeSign` struct in `main.rs`:
+
+```rust
+use pesign::PeSign;
+
+fn main() {
+    if let Some(pesign) = PeSign::from_pe_path("test.exe").unwarp() {
+        // Add your program logic.
+    } else {
+        println!("The file is no signed!!");
+    }
+}
+```
+
 ## Contribution
 
 If you find any issues or have suggestions for new features, feel free to submit an [Issue](https://github.com/0xlane/pe-sign/issues) or create a Pull Request.
