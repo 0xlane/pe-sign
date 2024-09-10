@@ -1,9 +1,11 @@
 # pe-sign
 
 ![language](https://img.shields.io/github/languages/top/0xlane/pe-sign)
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
+![Crates.io Version](https://img.shields.io/crates/v/pe-sign)
 ![License](https://img.shields.io/badge/license-MIT-green)
 [![dependency status](https://deps.rs/repo/github/0xlane/pe-sign/status.svg)](https://deps.rs/repo/github/0xlane/pe-sign)
+![docs.rs](https://img.shields.io/docsrs/pe-sign)
+![Crates.io Size](https://img.shields.io/crates/size/pe-sign)
 
 [README](README.md) | [中文文档](README_zh.md)
 
@@ -223,7 +225,7 @@ Options:
 
 ## 作为项目依赖库
 
-你也可以将 pe-sign 添加为依赖，集成到自己的项目中。使用以下命令添加依赖：
+你也可以将 `pe-sign` 添加为依赖，集成到自己的项目中。使用以下命令添加依赖：
 
 ```rust
 cargo add pe-sign
@@ -242,6 +244,8 @@ fn main() {
     }
 }
 ```
+
+更多详细信息，请参阅 crate [文档](https://docs.rs/pe-sign/latest/pesign)。
 
 ## 贡献
 

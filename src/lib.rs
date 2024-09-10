@@ -11,7 +11,7 @@
 //!
 //! Run
 //! ```console
-//! $ cargo add pesign
+//! $ cargo add pe-sign
 //! ```
 //!
 //! Then use `pesign` and parse PE file sigature to [`PeSign`] struct in `main.rs`:
