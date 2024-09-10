@@ -4,8 +4,9 @@
 ![Crates.io Version](https://img.shields.io/crates/v/pe-sign)
 ![License](https://img.shields.io/badge/license-MIT-green)
 [![dependency status](https://deps.rs/repo/github/0xlane/pe-sign/status.svg)](https://deps.rs/repo/github/0xlane/pe-sign)
-![docs.rs](https://img.shields.io/docsrs/pe-sign)
+[![docs.rs](https://img.shields.io/docsrs/pe-sign)](https://docs.rs/pe-sign/latest/pesign)
 ![Crates.io Size](https://img.shields.io/crates/size/pe-sign)
+[![Crates.io Total Downloads](https://img.shields.io/crates/d/pe-sign)](https://crates.io/crates/pe-sign)
 
 [README](README.md) | [中文文档](README_zh.md)
 
