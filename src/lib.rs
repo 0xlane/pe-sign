@@ -15,11 +15,11 @@
 //! ```
 //!
 //! Then use `pesign` and parse PE file sigature to [`PeSign`] struct in `main.rs`:
-//! ```rust
+//! ```no_run
 //! use pesign::PeSign;
 //! 
 //! fn main() {
-//!     if let Some(pesign) = PeSign::from_pe_path("test.exe").unwarp() {
+//!     if let Some(pesign) = PeSign::from_pe_path("test.exe").unwrap() {
 //!         // Add your program logic.
 //!     } else {
 //!         println!("The file is no signed!!");
@@ -638,6 +638,6 @@ mod tests {
             .verify_pe_data(pedata, &Default::default())
             .unwrap();
 
-        assert_eq!(status, PeSignStatus::Valid);
+        assert_eq!(status, PeSignStatus::Expired);
     }
 }

@@ -237,7 +237,7 @@ cargo add pe-sign
 use pesign::PeSign;
 
 fn main() {
-    if let Some(pesign) = PeSign::from_pe_path("test.exe").unwarp() {
+    if let Some(pesign) = PeSign::from_pe_path("test.exe").unwrap() {
         // Add your program logic.
     } else {
         println!("The file is no signed!!");

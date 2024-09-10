@@ -15,6 +15,9 @@ keywords = ["portable-executable", "blue-team", "signature", "certificate", "ope
 categories = ["command-line-utilities", "no-std", "authentication", "parsing"]
 readme = "README.md"
 license-file = "LICENSE"
+exclude = [
+    "src/examples/*",
+]
 
 [lib]
 name = "pesign"
