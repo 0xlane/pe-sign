@@ -7,25 +7,25 @@
 
 [README](README.md) | [中文文档](README_zh.md)
 
-`pe-sign` is a cross-platform tool developed in Rust, designed for parsing and verifying digital signatures in PE files. It provides a simple command-line interface that supports extracting certificates, verifying digital signatures, calculating Authenticode digests, and printing certificate information. It can be used as a standalone command-line tool or integrated into your Rust project as a dependency.
+`pe-sign` 是一个 Rust 开发的跨平台工具，用于解析和验证 PE 文件数字签名的工具。它提供了简单的命令行接口，支持提取证书、验证数字签名、计算 Authenticode 摘要以及打印证书信息。它可以作为一个命令行工具使用，也可以通过添加依赖集成到你的 Rust 项目中。
 
-This project is based on the pe-sign command-line tool from repository [windows_pe_signature_research](https://github.com/0xlane/windows_pe_signature_research), with the OpenSSL dependency removed.
+该项目基于对仓库 [windows_pe_signature_research](https://github.com/0xlane/windows_pe_signature_research) 中的 pe-sign 命令行工具改造所得，去除了 openssl 依赖。
 
-## Features
+## 功能
 
-- **Extract Certificates**: Extract certificates from PE files.
-- **Verify Signatures**: Check the validity of a PE file's digital signature.
-- **Calculate Authenticode Digest**: Compute the Authenticode digest of a PE file.
-- **Print Certificate Information**: Display detailed information about certificates in PE files.
-- **Print Signer Information**: Show detailed signer information from PE files.
+- **提取证书**: 从 PE 文件中提取证书。
+- **验证签名**: 检查 PE 文件的数字签名是否有效。
+- **计算 Authenticode 摘要**: 计算 PE 文件的 Authenticode 摘要。
+- **打印证书信息**: 显示 PE 文件中证书的详细信息。
+- **打印签名者信息**: 显示 PE 文件签名都的详细信息。
 
-## CLI Tool
+## 命令行工具
 
-### Installation
+### 安装
 
-Download the binary for your platform from the Releases page. On Linux and macOS, you can place it in the `/bin` directory or add it to the `PATH` environment variable. On Windows, you can place it in `C:\Windows\System32` or add it to the `PATH` environment variable.
+直接下载 Release 中对应平台的二进制文件使用，Linux、Mac 系统可直接放入 /bin 目录下或 PATH 全局变量中，Windows 可放入 C:\Windows\System32 目录下或 PATH 全局变量中。
 
-### Usage
+### 使用说明
 
 ```powershell
 pe-sign (0.1.0) - REinject
@@ -45,7 +45,7 @@ Options:
   -V, --version  Print version
 ```
 
-#### Extracting the Signature Certificate
+#### 提取签名证书
 
 ```powershell
 Extract the certificate of a PE file
@@ -62,18 +62,18 @@ Options:
   -h, --help           Print help
 ```
 
-You can also output the results using pipes and redirection in addition to the `-o` option. Example:
+除了使用 `-o` 选项，还支持管道、重定向方式输出，示例：
 
 ```powershell
 pesign.exe extract test.exe --pem > pkcs7.cer
 pesign.exe extract test.exe --pem | openssl pkcs7 -inform PEM --print_certs -noout -text
 ```
 
-Note: When using pipes or redirection in PowerShell, must include the ``--pem`` flag. Otherwise, the output DER binary data will be interpreted as a string by PowerShell.
+需要注意的是，在 powrershell 中使用管道、重定向时请添加 `--pem` 参数，否则输出的 DER 二进制数据会被 powershell 看作字符串转义。
 
-#### Printing Certificate Information
+#### 打印证书信息
 
-The command-line tool provides an OpenSSL-like `--print_certs` feature, which outputs a similar format to OpenSSL:
+命令行工具提供了类似 openssl 的 `--print_certs` 功能，与 openssl 输出格式基本一致：
 
 ```powershell
 Print the certificate information of a PE file.
@@ -89,7 +89,7 @@ Options:
   -h, --help         Print help
 ```
 
-Example:
+示例：
 
 ```powershell
 PS C:\dev\pe-sign> pesign.exe print .\ProcessHacker.exe
@@ -141,7 +141,7 @@ Certificate:
 ...
 ```
 
-Additionally, use the `--signer-info` option to print signer information. Example:
+另外，还可以使用 `--signer-info` 选项打印签名者信息，示例：
 
 ```powershell
 PS C:\dev\pe-sign> pesign.exe print .\ProcessHacker.exe --signer-info
@@ -201,9 +201,9 @@ Signer Info:
         ...
 ```
 
-#### Verifying the Signature
+### 验证签名
 
-The tool also verifies the validity of PE file signatures:
+命令行工具也可用于验证签名有效性：
 
 ```powershell
 Check the digital signature of a PE file for validity
@@ -219,24 +219,24 @@ Options:
   -h, --help            Print help
 ```
 
-Use the `--no-check-time` option to skip the time validity check. And use the `--ca-file` option to specify a PEM-formatted trusted CA certificate file. If not specified, it will use the default built-in ca certificates for verification.
+使用 `--no-check-time` 选项可跳过签名时间有效性检查，`--ca-file` 选项用于指定 PEM 格式的可信 CA 证书，若不指定则使用内置的默认证书进行有效性验证。
 
-## Library Integration
+## 作为项目依赖库
 
-You can also integrate `pe-sign` into your project as a dependency. Add it using the following command:
+你也可以将 pe-sign 添加为依赖，集成到自己的项目中。使用以下命令添加依赖：
 
 ```rust
 cargo add pe-sign
 ```
 
-## Contribution
+## 贡献
 
-If you find any issues or have suggestions for new features, feel free to submit an [Issue](https://github.com/0xlane/pe-sign/issues) or create a Pull Request.
+如果你发现问题或者有新的功能建议，欢迎提交 [Issue](https://github.com/0xlane/pe-sign/issues) 或发起 Pull Request。
 
-## Repository
+## 仓库
 
-You can view the project's source code here: [pe-sign GitHub Repository](https://github.com/0xlane/pe-sign).
+你可以在此处查看项目的源码：[pe-sign GitHub 仓库](https://github.com/0xlane/pe-sign)
 
-## License
+## 许可证
 
-This project is open-source under the MIT License. For more details, see the [LICENSE](https://github.com/0xlane/pe-sign/blob/main/LICENSE) file.
+该项目基于 MIT 许可证开源。详情请查看 [LICENSE](https://github.com/0xlane/pe-sign/blob/main/LICENSE) 文件。
