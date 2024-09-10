@@ -12,7 +12,7 @@ certificates, verifying digital signatures, calculating Authenticode digests, an
 certificate information.
 """
 keywords = ["portable-executable", "blue-team", "signature", "certificate", "openssl"]
-categories = ["Command line utilities", "No standard library", "authentication", "parsing"]
+categories = ["command-line-utilities", "no-std", "authentication", "parsing"]
 readme = "README.md"
 license-file = "LICENSE"
 
