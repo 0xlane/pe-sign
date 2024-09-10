@@ -81,7 +81,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             // 从文件解析 pkcs7 签名数据
             let pesign = match PeSign::from_pe_path(file)? {
                 Some(pesign) => match embedded {
-                    true => match pesign.signed_data.get_nested_signature()? {
+                    true => match pesign.signed_data.signer_info.get_nested_signature()? {
                         Some(nested_pesign) => nested_pesign,
                         None => {
                             println!("The file is no nested signature!!");
@@ -180,7 +180,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         println!("{}", pesign.signed_data.signer_info);
 
                         if all {
-                            match pesign.signed_data.get_nested_signature()? {
+                            match pesign.signed_data.signer_info.get_nested_signature()? {
                                 Some(nested) => {
                                     println!("============");
                                     println!("{}", nested.signed_data.signer_info);
@@ -201,7 +201,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         );
 
                         if all {
-                            match pesign.signed_data.get_nested_signature()? {
+                            match pesign.signed_data.signer_info.get_nested_signature()? {
                                 Some(nested) => {
                                     println!("============");
                                     println!(

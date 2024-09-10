@@ -2,7 +2,9 @@ use std::{fmt::Display, ops::Range, path::Path};
 
 use asn1_types::SpcIndirectDataContent;
 use cert::Algorithm;
+use chrono::{DateTime, Local, Utc};
 use cms::{
+    attr::SigningTime,
     cert::x509::der::{oid::db::rfc5911::ID_SIGNED_DATA, Decode, SliceReader},
     content_info::ContentInfo,
 };
@@ -397,8 +399,44 @@ impl TryFrom<x509_cert::attr::Attribute> for Attribute {
 
 impl Display for Attribute {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}:", self.oid)?;
-        write!(f, "{}", self.values.concat().to_bytes_string().indent(4))
+        let attr_value = self.values.concat();
+        match self.oid.as_str() {
+            "1.2.840.113549.1.9.5" => {
+                // signingTime
+                writeln!(f, "{}", "Signing Time (1.2.840.113549.1.9.5):")?;
+                match SigningTime::from_der(&attr_value).map_err(|_| std::fmt::Error)? {
+                    x509_cert::time::Time::UtcTime(time) => {
+                        write!(
+                            f,
+                            "{}",
+                            DateTime::<Utc>::from(time.to_system_time())
+                                .with_timezone(&Local)
+                                .to_string()
+                                .indent(4)
+                        )
+                    }
+                    x509_cert::time::Time::GeneralTime(time) => {
+                        write!(
+                            f,
+                            "{}",
+                            DateTime::<Utc>::from(time.to_system_time())
+                                .with_timezone(&Local)
+                                .to_string()
+                                .indent(4)
+                        )
+                    }
+                }
+            }
+            "1.2.840.113549.1.9.6" => {
+                // counterSignature
+                writeln!(f, "{}", "Counter Signature (1.2.840.113549.1.9.6):")?;
+                write!(f, "{}", attr_value.to_bytes_string().indent(4))
+            }
+            _ => {
+                writeln!(f, "{}:", self.oid)?;
+                write!(f, "{}", attr_value.to_bytes_string().indent(4))
+            }
+        }
     }
 }
 
@@ -440,7 +478,12 @@ mod tests {
     fn get_nested_authenticode() {
         let bytes = include_bytes!("./examples/pkcs7.cer");
         let pesign = PeSign::from_certificate_table_buf(bytes).unwrap();
-        let nested = pesign.signed_data.get_nested_signature().unwrap().unwrap();
+        let nested = pesign
+            .signed_data
+            .signer_info
+            .get_nested_signature()
+            .unwrap()
+            .unwrap();
 
         assert_eq!(
             nested.authenticode_digest,
@@ -467,7 +510,12 @@ mod tests {
         let pesign = PeSign::from_certificate_table_buf(bytes).unwrap();
 
         assert_eq!(
-            pesign.signed_data.get_signature_time().unwrap().as_secs(),
+            pesign
+                .signed_data
+                .signer_info
+                .get_signature_time()
+                .unwrap()
+                .as_secs(),
             1459215302
         );
     }
@@ -480,10 +528,12 @@ mod tests {
         assert_eq!(
             pesign
                 .signed_data
+                .signer_info
                 .get_nested_signature()
                 .unwrap()
                 .unwrap()
                 .signed_data
+                .signer_info
                 .get_signature_time()
                 .unwrap()
                 .as_secs(),
@@ -497,7 +547,12 @@ mod tests {
         let pesign = PeSign::from_certificate_table_buf(bytes).unwrap();
 
         assert_eq!(
-            pesign.signed_data.get_signature_time().unwrap().as_secs(),
+            pesign
+                .signed_data
+                .signer_info
+                .get_signature_time()
+                .unwrap()
+                .as_secs(),
             1717347664
         );
     }

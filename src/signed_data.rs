@@ -118,6 +118,10 @@ impl Display for SignerInfo {
                 self.unsigned_attrs.clone().unwrap().to_string().indent(8)
             )?;
         }
+        if let Some(cs_info) = self.get_countersigner_info().map_err(|_| std::fmt::Error)? {
+            writeln!(f, "{}", "Countersigner Info:".indent(4))?;
+            writeln!(f, "{}", cs_info.to_string().indent(8))?;
+        }
         writeln!(
             f,
             "{}",
@@ -239,6 +243,172 @@ impl SignerInfo {
         }
 
         Ok(PeSignStatus::Valid)
+    }
+
+    // 从签名属性中获取副署签名信息
+    pub fn get_countersignature(self: &Self) -> Result<Option<Self>, PeSignError> {
+        match &self.unsigned_attrs {
+            Some(unsigned_attrs) => {
+                match unsigned_attrs
+                    .0
+                    .iter()
+                    .find(|v| v.oid == "1.2.840.113549.1.9.6")
+                {
+                    Some(countersignature_attr) => {
+                        let attr_value = countersignature_attr.values.concat();
+                        let cs_signer_info = cms::signed_data::SignerInfo::from_der(&attr_value)
+                            .map_app_err(PeSignErrorKind::InvalidCounterSignature)?;
+
+                        Ok(Some(cs_signer_info.try_into()?))
+                    }
+                    None => Ok(None),
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    // 获取微软 TST 签名
+    pub fn get_ms_tst_signature(self: &Self) -> Result<Option<SignedData>, PeSignError> {
+        match &self.unsigned_attrs {
+            Some(unsigned_attrs) => {
+                match unsigned_attrs
+                    .0
+                    .iter()
+                    .find(|v| v.oid == "1.3.6.1.4.1.311.3.3.1")
+                {
+                    Some(ms_tst_sign_attr) => {
+                        let attr_value = &ms_tst_sign_attr.values.concat()[..];
+                        let tst_signed_data = {
+                            let mut reader = SliceReader::new(attr_value).map_unknown_err()?;
+                            let ci = ContentInfo::decode(&mut reader)
+                                .map_app_err(PeSignErrorKind::InvalidContentInfo)?;
+
+                            // signedData
+                            match ci.content_type {
+                                ID_SIGNED_DATA => ci
+                                    .content
+                                    .decode_as::<cms::signed_data::SignedData>()
+                                    .map_app_err(PeSignErrorKind::InvalidSignedData)?
+                                    .try_into()?,
+                                ct => {
+                                    return Err(PeSignError {
+                                        kind: PeSignErrorKind::InvalidContentType,
+                                        message: ct.to_string(),
+                                    }
+                                    .into());
+                                }
+                            }
+                        };
+
+                        Ok(Some(tst_signed_data))
+                    }
+                    None => Ok(None),
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    // 获取内嵌签名
+    pub fn get_nested_signature(self: &Self) -> Result<Option<PeSign>, PeSignError> {
+        match &self.unsigned_attrs {
+            Some(unsigned_attrs) => {
+                match unsigned_attrs
+                    .0
+                    .iter()
+                    .find(|v| v.oid == "1.3.6.1.4.1.311.2.4.1")
+                {
+                    Some(nested_sign_attr) => {
+                        let attr_value = &nested_sign_attr.values.concat()[..];
+                        let nested_sign = PeSign::from_certificate_table_buf(attr_value)?;
+
+                        Ok(Some(nested_sign))
+                    }
+                    None => Ok(None),
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    // 获取副署签名者信息
+    pub fn get_countersigner_info(self: &Self) -> Result<Option<Self>, PeSignError> {
+        match self.get_countersignature()? {
+            Some(cs) => Ok(Some(cs)),
+            None => match self.get_ms_tst_signature()? {
+                Some(tst_sign) => Ok(Some(tst_sign.signer_info)),
+                None => Ok(None),
+            },
+        }
+    }
+
+    // 得到签名时间
+    pub fn get_signature_time(self: &Self) -> Result<Duration, PeSignError> {
+        fn get_signing_time_from_attr(
+            signed_attrs: &Option<Attributes>,
+        ) -> Result<Option<Duration>, PeSignError> {
+            if let Some(signing_time_attr) = match signed_attrs {
+                Some(signed_attrs) => signed_attrs
+                    .0
+                    .iter()
+                    .find(|v| v.oid == "1.2.840.113549.1.9.5"), // signingTime attr
+                None => None,
+            } {
+                let attr_value = signing_time_attr.values.concat();
+                match SigningTime::from_der(&attr_value)
+                    .map_app_err(PeSignErrorKind::InvalidSigningTime)?
+                {
+                    x509_cert::time::Time::UtcTime(time) => Ok(Some(time.to_unix_duration())),
+                    x509_cert::time::Time::GeneralTime(time) => Ok(Some(time.to_unix_duration())),
+                }
+            } else {
+                Ok(None)
+            }
+        }
+
+        let signing_time = match get_signing_time_from_attr(&self.signed_attrs)? {
+            Some(signing_time) => Some(signing_time),
+            None => {
+                match self.get_countersignature()? {
+                    Some(cs_signer_info) => {
+                        match get_signing_time_from_attr(&cs_signer_info.signed_attrs)? {
+                            Some(signing_time) => Some(signing_time),
+                            None => None,
+                        }
+                    }
+                    None => {
+                        match self.get_ms_tst_signature()? {
+                            Some(ms_tst_signature) => match get_signing_time_from_attr(
+                                &ms_tst_signature.signer_info.signed_attrs,
+                            )? {
+                                Some(signing_time) => Some(signing_time),
+                                None => {
+                                    match ms_tst_signature.encap_content_info.econtent_type.as_str()
+                                    {
+                                        "1.2.840.113549.1.9.16.1.4" => {
+                                            // id-smime-ct-TSTInfo
+                                            let x = TSTInfo::from_der(
+                                                &ms_tst_signature.encap_content_info.econtent_value,
+                                            )
+                                            .map_app_err(PeSignErrorKind::InvalidTSTInfo)?;
+                                            Some(x.gen_time.to_unix_duration())
+                                        }
+                                        _ => None,
+                                    }
+                                }
+                            },
+                            None => None,
+                        }
+                    }
+                }
+            }
+        };
+
+        Ok(signing_time.ok_or(PeSignError {
+            kind: PeSignErrorKind::NoFoundSigningTime,
+            message: "".to_owned(),
+        })?)
     }
 }
 
@@ -374,37 +544,13 @@ impl SignedData {
         Ok(cert_chain)
     }
 
-    // 从签名属性中获取副署签名信息
-    pub fn get_countersignature(self: &Self) -> Result<Option<SignerInfo>, PeSignError> {
-        let signer_info = &self.signer_info;
-        match &signer_info.unsigned_attrs {
-            Some(unsigned_attrs) => {
-                match unsigned_attrs
-                    .0
-                    .iter()
-                    .find(|v| v.oid == "1.2.840.113549.1.9.6")
-                {
-                    Some(countersignature_attr) => {
-                        let attr_value = countersignature_attr.values.concat();
-                        let cs_signer_info = cms::signed_data::SignerInfo::from_der(&attr_value)
-                            .map_app_err(PeSignErrorKind::InvalidCounterSignature)?;
-
-                        Ok(Some(cs_signer_info.try_into()?))
-                    }
-                    None => Ok(None),
-                }
-            }
-            None => Ok(None),
-        }
-    }
-
     // 构建副署签名证书链
     pub fn build_contersignature_cert_chain(
         self: &Self,
         ca_pem: Option<&str>,
     ) -> Result<Option<CertificateChain>, PeSignError> {
-        if let Some(cs_signer_info) = self.get_countersignature()? {
-            // 构建证书建
+        if let Some(cs_signer_info) = self.signer_info.get_countersignature()? {
+            // 构建证书链
             let cert_chain = CertificateChainBuilder::new()
                 .set_trusted_ca_certs(&Certificate::load_pem_chain(match ca_pem {
                     Some(ca_pem) => ca_pem,
@@ -416,140 +562,22 @@ impl SignedData {
 
             Ok(Some(cert_chain))
         } else {
-            Ok(None)
-        }
-    }
+            match self.signer_info.get_ms_tst_signature()? {
+                Some(tst_sign) => {
+                    let cert_chain = CertificateChainBuilder::new()
+                        .set_trusted_ca_certs(&Certificate::load_pem_chain(match ca_pem {
+                            Some(ca_pem) => ca_pem,
+                            None => DEFAULT_TRUSTED_CA_PEM,
+                        })?)
+                        .set_cert_list(&tst_sign.cert_list)
+                        .set_sid(tst_sign.signer_info.sid.clone())
+                        .build()?;
 
-    // 获取微软 TST 签名
-    pub fn get_ms_tst_signature(self: &Self) -> Result<Option<SignedData>, PeSignError> {
-        match &self.signer_info.unsigned_attrs {
-            Some(unsigned_attrs) => {
-                match unsigned_attrs
-                    .0
-                    .iter()
-                    .find(|v| v.oid == "1.3.6.1.4.1.311.3.3.1")
-                {
-                    Some(ms_tst_sign_attr) => {
-                        let attr_value = &ms_tst_sign_attr.values.concat()[..];
-                        let tst_signed_data = {
-                            let mut reader = SliceReader::new(attr_value).map_unknown_err()?;
-                            let ci = ContentInfo::decode(&mut reader)
-                                .map_app_err(PeSignErrorKind::InvalidContentInfo)?;
-
-                            // signedData
-                            match ci.content_type {
-                                ID_SIGNED_DATA => ci
-                                    .content
-                                    .decode_as::<cms::signed_data::SignedData>()
-                                    .map_app_err(PeSignErrorKind::InvalidSignedData)?
-                                    .try_into()?,
-                                ct => {
-                                    return Err(PeSignError {
-                                        kind: PeSignErrorKind::InvalidContentType,
-                                        message: ct.to_string(),
-                                    }
-                                    .into());
-                                }
-                            }
-                        };
-
-                        Ok(Some(tst_signed_data))
-                    }
-                    None => Ok(None),
+                    Ok(Some(cert_chain))
                 }
-            }
-            None => Ok(None),
-        }
-    }
-
-    // 获取内嵌签名
-    pub fn get_nested_signature(self: &Self) -> Result<Option<PeSign>, PeSignError> {
-        match &self.signer_info.unsigned_attrs {
-            Some(unsigned_attrs) => {
-                match unsigned_attrs
-                    .0
-                    .iter()
-                    .find(|v| v.oid == "1.3.6.1.4.1.311.2.4.1")
-                {
-                    Some(nested_sign_attr) => {
-                        let attr_value = &nested_sign_attr.values.concat()[..];
-                        let nested_sign = PeSign::from_certificate_table_buf(attr_value)?;
-
-                        Ok(Some(nested_sign))
-                    }
-                    None => Ok(None),
-                }
-            }
-            None => Ok(None),
-        }
-    }
-
-    // 得到签名时间
-    pub fn get_signature_time(self: &Self) -> Result<Duration, PeSignError> {
-        fn get_signing_time_from_attr(
-            signed_attrs: &Option<Attributes>,
-        ) -> Result<Option<Duration>, PeSignError> {
-            if let Some(signing_time_attr) = match signed_attrs {
-                Some(signed_attrs) => signed_attrs
-                    .0
-                    .iter()
-                    .find(|v| v.oid == "1.2.840.113549.1.9.5"), // signingTime attr
-                None => None,
-            } {
-                let attr_value = signing_time_attr.values.concat();
-                match SigningTime::from_der(&attr_value)
-                    .map_app_err(PeSignErrorKind::InvalidSigningTime)?
-                {
-                    x509_cert::time::Time::UtcTime(time) => Ok(Some(time.to_unix_duration())),
-                    x509_cert::time::Time::GeneralTime(time) => Ok(Some(time.to_unix_duration())),
-                }
-            } else {
-                Ok(None)
+                None => Ok(None),
             }
         }
-
-        let signing_time = match get_signing_time_from_attr(&self.signer_info.signed_attrs)? {
-            Some(signing_time) => Some(signing_time),
-            None => {
-                match self.get_countersignature()? {
-                    Some(cs_signer_info) => {
-                        match get_signing_time_from_attr(&cs_signer_info.signed_attrs)? {
-                            Some(signing_time) => Some(signing_time),
-                            None => None,
-                        }
-                    }
-                    None => {
-                        match self.get_ms_tst_signature()? {
-                            Some(ms_tst_signature) => match get_signing_time_from_attr(
-                                &ms_tst_signature.signer_info.signed_attrs,
-                            )? {
-                                Some(signing_time) => Some(signing_time),
-                                None => {
-                                    match ms_tst_signature.encap_content_info.econtent_type.as_str()
-                                    {
-                                        "1.2.840.113549.1.9.16.1.4" => {
-                                            // id-smime-ct-TSTInfo
-                                            let x = TSTInfo::from_der(
-                                                &ms_tst_signature.encap_content_info.econtent_value,
-                                            )
-                                            .map_app_err(PeSignErrorKind::InvalidTSTInfo)?;
-                                            Some(x.gen_time.to_unix_duration())
-                                        }
-                                        _ => None,
-                                    }
-                                }
-                            },
-                            None => None,
-                        }
-                    }
-                }
-            }
-        };
-
-        Ok(signing_time.ok_or(PeSignError {
-            kind: PeSignErrorKind::NoFoundSigningTime,
-            message: "".to_owned(),
-        })?)
     }
 
     // 验证签名有效性
