@@ -17,6 +17,7 @@ readme = "README.md"
 license-file = "LICENSE"
 exclude = [
     "src/examples/*",
+    ".github/*",
 ]
 
 [lib]
