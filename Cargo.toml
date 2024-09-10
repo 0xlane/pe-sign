@@ -5,9 +5,16 @@ edition = "2021"
 authors = ["REinject"]
 homepage = "https://github.com/0xlane/pe-sign"
 repository = "https://github.com/0xlane/pe-sign"
-description = "A rust library for verifying and extracting signature information from PE files."
-keywords = ["portable-executable", "blue-team", "signature", "certificate"]
-license = "MIT"
+description = """
+pe-sign is a cross-platform tool developed in Rust, designed for parsing and verifying digital 
+signatures in PE files. It provides a simple command-line interface that supports extracting 
+certificates, verifying digital signatures, calculating Authenticode digests, and printing 
+certificate information.
+"""
+keywords = ["portable-executable", "blue-team", "signature", "certificate", "openssl"]
+categories = ["Command line utilities", "No standard library", "certificate", "portable-executable"]
+readme = "README.md"
+license-file = "LICENSE"
 
 [lib]
 name = "pesign"
