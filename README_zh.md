@@ -132,8 +132,8 @@ Certificate:
                     URI:http://crl4.digicert.com/ha-cs-2011a.crl
             Certificate Policies: <Unsupported>
             Authority Information Access:
-                1.3.6.1.5.5.7.48.1 - URI:http://ocsp.digicert.com
-                1.3.6.1.5.5.7.48.2 - URI:http://cacerts.digicert.com/DigiCertHighAssuranceCodeSigningCA-1.crt
+                OCSP - URI:http://ocsp.digicert.com
+                CA Issuers - URI:http://cacerts.digicert.com/DigiCertHighAssuranceCodeSigningCA-1.crt
             Basic Constraints:
                 ca:FALSE
     Signature Algorithm: Sha1WithRSA
