@@ -10,6 +10,7 @@ use der::{
     Decode, Encode,
 };
 use digest::{Digest, DynDigest};
+use num_traits::ToPrimitive;
 use rsa::{pkcs1::DecodeRsaPublicKey, traits::PublicKeyParts, Pkcs1v15Sign, RsaPublicKey};
 use sha1::Sha1;
 use sha2::{Sha224, Sha256, Sha384, Sha512};
@@ -23,7 +24,6 @@ use super::{
     ext::{Extension, Extensions},
     name::RdnSequence,
 };
-
 
 /// Parse Certificate.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -73,7 +73,11 @@ impl Display for Certificate {
             format!("Version: {} (0x{:x})", self.version + 1, self.version).indent(8)
         )?;
         writeln!(f, "{}", "Serial Number:".indent(8))?;
-        writeln!(f, "{}", self.serial_number.clone().to_bytes_string().indent(12))?;
+        writeln!(
+            f,
+            "{}",
+            self.serial_number.clone().to_bytes_string().indent(12)
+        )?;
         writeln!(f, "{}", format!("Issuer: {}", self.issuer).indent(8))?;
         writeln!(f, "{}", self.validity.to_string().indent(8))?;
         writeln!(f, "{}", format!("Subject: {}", self.subject).indent(8))?;
@@ -91,7 +95,11 @@ impl Display for Certificate {
             format!("Signature Algorithm: {}", self.signature_algorithm).indent(4)
         )?;
         writeln!(f, "{}", "Signature Value:".indent(4))?;
-        write!(f, "{}", self.signature_value.clone().to_bytes_string().indent(12))
+        write!(
+            f,
+            "{}",
+            self.signature_value.clone().to_bytes_string().indent(12)
+        )
     }
 }
 
@@ -188,7 +196,7 @@ impl Certificate {
         }
     }
 
-    /// Get the tbs_certificate binary data for validating its trustworthiness, 
+    /// Get the tbs_certificate binary data for validating its trustworthiness,
     /// and the decrypted signature is the hash of tbs_certificate.
     pub fn get_tbs_certificate_bytes(self: &Self) -> Vec<u8> {
         self.__inner.tbs_certificate.to_der().unwrap()
@@ -395,6 +403,9 @@ impl TryFrom<x509_cert::spki::SubjectPublicKeyInfoOwned> for SubjectPublicKeyInf
 
 impl Display for SubjectPublicKeyInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mudulus = self.get_public_key_modulus();
+        let exponent = self.get_public_key_exponent().unwrap_or(0);
+
         writeln!(f, "Subject Public Key Info:")?;
         writeln!(
             f,
@@ -404,18 +415,20 @@ impl Display for SubjectPublicKeyInfo {
         writeln!(
             f,
             "{}",
-            format!(
-                "Public-Key: ({} bit)\nModules:",
-                (self.get_public_key_modules().len() - 1) * 8
-            )
-            .indent(4)
+            format!("Public-Key: ({} bit)\nModulus:", (mudulus.len() - 1) * 8).indent(4)
         )?;
-        write!(f, "{}", self.get_public_key_modules().to_bytes_string().indent(8))
+        writeln!(f, "{}", mudulus.to_bytes_string().indent(8))?;
+        write!(
+            f,
+            "{}",
+            format!("Exponent: {} (0x{:x})", exponent, exponent).indent(4)
+        )
     }
 }
 
 impl SubjectPublicKeyInfo {
-    pub fn get_public_key_modules(self: &Self) -> Vec<u8> {
+    /// Returns the modulus of the key.
+    pub fn get_public_key_modulus(self: &Self) -> Vec<u8> {
         match &self.__inner_public_key {
             Some(rsa_public_key) => {
                 let mut tmp = rsa_public_key.n().to_bytes_be();
@@ -423,6 +436,14 @@ impl SubjectPublicKeyInfo {
                 tmp
             }
             None => self.subject_public_key.clone(),
+        }
+    }
+
+    /// Returns the public exponent of the key.
+    pub fn get_public_key_exponent(self: &Self) -> Option<usize> {
+        match &self.__inner_public_key {
+            Some(rsa_public_key) => rsa_public_key.e().to_usize(),
+            None => None,
         }
     }
 }
