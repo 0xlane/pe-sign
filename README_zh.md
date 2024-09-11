@@ -26,7 +26,9 @@
 
 ### 安装
 
-直接下载 Release 中对应平台的二进制文件使用，Linux、Mac 系统可直接放入 /bin 目录下或 PATH 全局变量中，Windows 可放入 C:\Windows\System32 目录下或 PATH 全局变量中。
+直接下载 [`Release`](https://github.com/0xlane/pe-sign/releases) 中对应平台的二进制文件使用，Linux、Mac 系统可直接放入 `/bin` 目录下或 `PATH` 全局变量中，Windows 可放入 `C:\Windows\System32` 目录下或 `PATH` 全局变量中。
+
+另外，如果你已经安装 `Cargo`，则通过 `cargo install pe-sign` 命令安装更为方便。
 
 ### 使用说明
 
