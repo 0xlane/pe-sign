@@ -28,7 +28,7 @@ This project is based on the pe-sign command-line tool from repository [windows_
 
 Download the binary for your platform from the [`Releases`](https://github.com/0xlane/pe-sign/releases) page. On Linux and macOS, you can place it in the `/bin` directory or add it to the `PATH` environment variable. On Windows, you can place it in `C:\Windows\System32` or add it to the `PATH` environment variable.
 
-Alternatively, if you have `Cargo` installed, you can easily install it by running `cargo install pe-sign`.
+Alternatively, if you have `Cargo` installed, you can easily install it by running `cargo install pe-sign -F build-binary`.
 
 ### Usage
 

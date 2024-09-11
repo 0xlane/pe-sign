@@ -36,14 +36,14 @@ impl Display for BasicConstraints {
                 write!(
                     f,
                     "{}",
-                    format!("ca:{}, pathlen:{}", self.ca.to_string().to_uppercase(), len).indent(4)
+                    format!("CA:{}, pathlen:{}", self.ca.to_string().to_uppercase(), len).indent(4)
                 )
             }
             None => {
                 write!(
                     f,
                     "{}",
-                    format!("ca:{}", self.ca.to_string().to_uppercase()).indent(4)
+                    format!("CA:{}", self.ca.to_string().to_uppercase()).indent(4)
                 )
             }
         }

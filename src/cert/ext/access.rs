@@ -90,7 +90,14 @@ impl From<x509_cert::ext::pkix::AccessDescription> for AccessDescription {
 
 impl Display for AccessDescription {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} - {}", self.access_method, self.access_location)
+        let access_method = match self.access_method.as_str() {
+            "1.3.6.1.5.5.7.48.2" => "CA Issuers",
+            "1.3.6.1.5.5.7.48.1" => "OCSP",
+            "1.3.6.1.5.5.7.48.3" => "Time-Stamping",
+            "1.3.6.1.5.5.7.48.5" => "CA Repository",
+            vv => vv,
+        };
+        write!(f, "{} - {}", access_method, self.access_location)
     }
 }
 
