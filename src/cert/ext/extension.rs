@@ -79,7 +79,7 @@ pub enum Extension {
     IssuerAltName(IssuerAltName),
     SubjectDirectoryAttributes(SubjectDirectoryAttributes),
     InhibitAnyPolicy(InhibitAnyPolicy),
-    Unknown(Vec<u8>),
+    Unknown((String, Vec<u8>)),
 }
 
 impl TryFrom<x509_cert::ext::Extension> for Extension {
@@ -205,7 +205,7 @@ impl TryFrom<x509_cert::ext::Extension> for Extension {
                     .map_app_err(PeSignErrorKind::InvalidCertificateExtension)?
                     .into(),
             )),
-            _ => Ok(Self::Unknown(value.extn_value.into_bytes())),
+            oid => Ok(Self::Unknown((oid.to_string(), value.extn_value.into_bytes()))),
         }
     }
 }
@@ -267,8 +267,8 @@ impl Display for Extension {
             Extension::IssuerAltName(vv) => vv.to_string(),
             Extension::SubjectDirectoryAttributes(vv) => vv.to_string(),
             Extension::InhibitAnyPolicy(vv) => vv.to_string(),
-            Extension::Unknown(vv) => {
-                format!("Unknown:\n{}", vv.to_bytes_string().indent(4))
+            Extension::Unknown((oid, vv)) => {
+                format!("{}:\n{}", oid, vv.to_bytes_string().indent(4))
             }
         };
 

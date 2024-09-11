@@ -13,7 +13,7 @@ fn cli() -> clap::Command {
     use clap::{arg, value_parser, Command};
 
     Command::new("pe-sign")
-        .version("0.1.1")
+        .version("0.1.2")
         .about("A tool for parsing and verifing PE file signatures\n\nRepository: https://github.com/0xlane/pe-sign\n")
         .author("REinject")
         .help_template("{name} ({version}) - {author}\n{about}\n{all-args}")

@@ -1,12 +1,12 @@
 //! > **PE Signature Parser for Rust**
 //!
-//! `pe-sign` is a cross-platform tool developed in Rust, designed for parsing and verifying digital signatures 
-//! in PE files. It provides a simple command-line interface that supports extracting certificates, verifying 
-//! digital signatures, calculating Authenticode digests, and printing certificate information. It can be used 
+//! `pe-sign` is a cross-platform tool developed in Rust, designed for parsing and verifying digital signatures
+//! in PE files. It provides a simple command-line interface that supports extracting certificates, verifying
+//! digital signatures, calculating Authenticode digests, and printing certificate information. It can be used
 //! as a standalone command-line tool or integrated into your Rust project as a dependency.
-//! 
+//!
 //! CommandLine Tool Document: [README.md](https://github.com/0xlane/pe-sign).
-//! 
+//!
 //! ## Example
 //!
 //! Run
@@ -17,7 +17,7 @@
 //! Then use `pesign` and parse PE file sigature to [`PeSign`] struct in `main.rs`:
 //! ```no_run
 //! use pesign::PeSign;
-//! 
+//!
 //! fn main() {
 //!     if let Some(pesign) = PeSign::from_pe_path("test.exe").unwrap() {
 //!         // Add your program logic.
@@ -52,17 +52,17 @@ pub mod utils;
 pub use der;
 
 /// Obtaining a PE file's signature
-/// 
+///
 /// This includes all the information in the PE signature: certificate list, signer information, and Authenticode.
-/// 
-/// You can retrieve the signature data from a specified PE file path using [`PeSign::from_pe_path`], or parse it 
+///
+/// You can retrieve the signature data from a specified PE file path using [`PeSign::from_pe_path`], or parse it
 /// from an exported signature byte array using [`PeSign::from_certificate_table_buf`].
-/// 
+///
 /// Example:
-/// 
+///
 /// ```no_run
 /// use pesign::PeSign;
-/// 
+///
 /// let pesign = PeSign::from_pe_path("test.exe").unwrap().unwrap();
 /// println!("{}", pesign.signed_data.signer_info);
 /// ```
@@ -106,7 +106,7 @@ impl<'a> PeSign {
             ID_SIGNED_DATA => {
                 let signed_data: SignedData = ci
                     .content
-                    .decode_as::<cms::signed_data::SignedData>()
+                    .decode_as::<crate::asn1_types::SignedData>()
                     .map_app_err(PeSignErrorKind::InvalidSignedData)?
                     .try_into()?;
 
@@ -537,13 +537,12 @@ mod tests {
     }
 
     #[test]
-    fn get_cert_signature_data() {
-        let bytes = include_bytes!("./examples/pkcs7.cer");
+    fn get_signer_signature_data() {
+        let bytes = include_bytes!("./examples/dotnet.cer");
         let pesign = PeSign::from_certificate_table_buf(bytes).unwrap();
 
-        let signer_cert_chain = pesign.signed_data.build_certificate_chain(None).unwrap();
+        let signature_value = &pesign.signed_data.signer_info.signature[..];
 
-        let signature_value = &signer_cert_chain[0].signature_value[..];
         let signature_bin = include_bytes!("./examples/signature.bin");
 
         assert_eq!(signature_value, signature_bin);
@@ -639,5 +638,15 @@ mod tests {
             .unwrap();
 
         assert_eq!(status, PeSignStatus::Expired);
+    }
+
+    #[test]
+    fn test_cert_include_attr_cert_v1() {
+        let bytes = include_bytes!("./examples/dotnet.cer");
+        let pesign = PeSign::from_certificate_table_buf(bytes).unwrap();
+
+        let signing_time = pesign.signed_data.signer_info.get_signing_time().unwrap();
+
+        assert_eq!(signing_time.as_secs(), 1715980852);
     }
 }

@@ -4,11 +4,7 @@ use std::{
 };
 
 use cms::{attr::SigningTime, content_info::ContentInfo};
-use der::{
-    asn1::OctetStringRef,
-    oid::db::{rfc5911::ID_SIGNED_DATA, rfc5912::RSA_ENCRYPTION},
-    Decode, Encode, SliceReader,
-};
+use der::{asn1::OctetStringRef, oid::db::rfc5911::ID_SIGNED_DATA, Decode, Encode, SliceReader};
 use rsa::pkcs1::DecodeRsaPublicKey;
 
 use super::asn1_types::TSTInfo;
@@ -54,24 +50,24 @@ impl Display for SignerIdentifier {
 }
 
 /// Parse SignerInfo.
-/// 
+///
 /// This includes the signer information of a PE signature.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SignerInfo {
     /// Signer Identifier
-    /// 
+    ///
     /// This ID refers to a certificate in the [`SignedData::cert_list`].
     pub sid: SignerIdentifier,
     /// Authenticated Attributes.
-    /// 
+    ///
     /// It can be verified using a signature and [`SignerInfo::sid`]'s corresponding certificate chain.
     pub signed_attrs: Option<Attributes>, // authenticatedAttributes
     /// Unauthenticated Attributes.
     pub unsigned_attrs: Option<Attributes>, // unauthenticatedAttributes
     /// [`SignerInfo::signed_attrs`]'s signature.
-    pub signature: Vec<u8>,               // encryptedDigest
+    pub signature: Vec<u8>, // encryptedDigest
     /// Sigature Algorithm
-    pub digest_alg: Algorithm,            // digestAlgorithm
+    pub digest_alg: Algorithm, // digestAlgorithm
 }
 
 impl TryFrom<cms::signed_data::SignerInfo> for SignerInfo {
@@ -91,12 +87,6 @@ impl TryFrom<cms::signed_data::SignerInfo> for SignerInfo {
             None => None,
         };
         // signature/encryptedDigest
-        if signer_info.signature_algorithm.oid != RSA_ENCRYPTION {
-            return Err(PeSignError {
-                kind: PeSignErrorKind::UnsupportedAlgorithm,
-                message: signer_info.signature_algorithm.oid.to_string(),
-            });
-        }
         let signature = signer_info.signature.as_bytes().to_vec();
         let digest_alg = signer_info.digest_alg.into();
 
@@ -130,6 +120,7 @@ impl Display for SignerInfo {
                 self.unsigned_attrs.clone().unwrap().to_string().indent(8)
             )?;
         }
+        self.get_countersigner_info().unwrap();
         if let Some(cs_info) = self.get_countersigner_info().map_err(|_| std::fmt::Error)? {
             writeln!(f, "{}", "Countersigner Info:".indent(4))?;
             writeln!(f, "{}", cs_info.to_string().indent(8))?;
@@ -146,7 +137,7 @@ impl Display for SignerInfo {
 
 impl SignerInfo {
     /// Verifying the integrity of the `indata` using the [`SignerInfo`].
-    /// 
+    ///
     /// `cert_list` is a list of certificates with sid and its parent certificates.
     pub fn verify(
         self: &Self,
@@ -198,13 +189,12 @@ impl SignerInfo {
                 hasher.update(&signed_attrs.to_der()?);
                 let hashed = hasher.finalize();
 
-                match rsa_publickey.verify(
-                    signer_cert.signature_algorithm.new_pkcs1v15sign()?,
-                    &hashed,
-                    signature,
-                ) {
+                match rsa_publickey.verify(self.digest_alg.new_pkcs1v15sign()?, &hashed, signature)
+                {
                     Ok(()) => { /*Validated*/ }
-                    Err(_) => return Ok(PeSignStatus::Invalid),
+                    Err(_) => {
+                        return Ok(PeSignStatus::Invalid);
+                    }
                 }
 
                 // message digest
@@ -303,7 +293,7 @@ impl SignerInfo {
                             match ci.content_type {
                                 ID_SIGNED_DATA => ci
                                     .content
-                                    .decode_as::<cms::signed_data::SignedData>()
+                                    .decode_as::<crate::asn1_types::SignedData>()
                                     .map_app_err(PeSignErrorKind::InvalidSignedData)?
                                     .try_into()?,
                                 ct => {
@@ -407,7 +397,11 @@ impl SignerInfo {
                                                 &ms_tst_signature.encap_content_info.econtent_value,
                                             )
                                             .map_app_err(PeSignErrorKind::InvalidTSTInfo)?;
-                                            Some(x.gen_time.to_unix_duration())
+                                            Some(
+                                                x.get_gen_time()
+                                                    .map_app_err(PeSignErrorKind::InvalidTSTInfo)?
+                                                    .to_unix_duration(),
+                                            )
                                         }
                                         _ => None,
                                     }
@@ -457,14 +451,14 @@ impl TryFrom<cms::signed_data::EncapsulatedContentInfo> for EncapsulatedContentI
 }
 
 /// Signed Data.
-/// 
+///
 /// This includes the all signature information: message digest、signer info、cert list.
 #[derive(Clone, Eq, PartialEq)]
 pub struct SignedData {
     pub encap_content_info: EncapsulatedContentInfo, // messageDigest
     pub signer_info: SignerInfo,                     // signerInfo
     pub cert_list: Vec<Certificate>,                 // cert list
-    __inner: cms::signed_data::SignedData,
+    __inner: crate::asn1_types::SignedData,
 }
 
 impl der::Encode for SignedData {
@@ -479,17 +473,17 @@ impl der::Encode for SignedData {
 
 impl<'a> der::Decode<'a> for SignedData {
     fn decode<R: der::Reader<'a>>(decoder: &mut R) -> der::Result<Self> {
-        let cert = cms::signed_data::SignedData::decode(decoder)?;
+        let cert = crate::asn1_types::SignedData::decode(decoder)?;
 
         cert.try_into()
             .map_err(|_| der::Error::new(der::ErrorKind::Failed, der::Length::ZERO))
     }
 }
 
-impl TryFrom<cms::signed_data::SignedData> for SignedData {
+impl TryFrom<crate::asn1_types::SignedData> for SignedData {
     type Error = PeSignError;
 
-    fn try_from(signed_data: cms::signed_data::SignedData) -> Result<Self, Self::Error> {
+    fn try_from(signed_data: crate::asn1_types::SignedData) -> Result<Self, Self::Error> {
         let __inner = signed_data.clone();
 
         let encap_content_info = signed_data.encap_content_info.try_into()?;
@@ -505,17 +499,23 @@ impl TryFrom<cms::signed_data::SignedData> for SignedData {
         })?;
 
         let mut cert_list = vec![];
-        for cert_choice in certset.0.iter() {
-            match cert_choice {
-                cms::cert::CertificateChoices::Certificate(cert) => {
-                    cert_list.push(cert.to_owned().try_into()?)
-                }
-                cms::cert::CertificateChoices::Other(cert) => {
-                    return Err(PeSignError {
-                        kind: PeSignErrorKind::UnsupportedCertificateFormat,
-                        message: cert.other_cert_format.to_string(),
+        for any_cert_choice in certset.0.iter() {
+            match cms::cert::CertificateChoices::from_der(
+                &any_cert_choice.to_der().map_unknown_err()?,
+            ) {
+                Ok(decoded_cert_choice) => match decoded_cert_choice {
+                    cms::cert::CertificateChoices::Certificate(cert) => {
+                        cert_list.push(cert.to_owned().try_into()?)
                     }
-                    .into())
+                    cms::cert::CertificateChoices::Other(_) => {
+                        // PeSignErrorKind::UnsupportedCertificateFormat -> OtherCertificate
+                    }
+                },
+                Err(_) => {
+                    // PeSignErrorKind::UnsupportedCertificateFormat ->
+                    //          ExtendedCertificate/AttributeCertificateV1/AttributeCertificateV2
+                    // TODO: Parse Obsolete Certificate format
+                    // Follow: https://github.com/RustCrypto/formats/issues/1452
                 }
             }
         }
