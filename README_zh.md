@@ -10,7 +10,7 @@
 
 [README](README.md) | [中文文档](README_zh.md)
 
-`pe-sign` 是一个 Rust 开发的跨平台工具，用于解析和验证 PE 文件数字签名的工具。它提供了简单的命令行接口，支持提取证书、验证数字签名、计算 Authenticode 摘要以及打印证书信息。它可以作为一个命令行工具使用，也可以通过添加依赖集成到你的 Rust 项目中。
+`pe-sign` 是一个用 Rust 语言开发的跨平台工具，专为解析和验证 PE 文件中的数字签名而设计。它既可以作为独立的命令行工具使用，也可以作为依赖库集成到任何 Rust 项目中。支持提取证书、验证签名、计算 Authenticode 签名摘要以及打印证书详细信息。
 
 该项目基于对仓库 [windows_pe_signature_research](https://github.com/0xlane/windows_pe_signature_research) 中的 pe-sign 命令行工具改造所得，去除了 openssl 依赖。
 
