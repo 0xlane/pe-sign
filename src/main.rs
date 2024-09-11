@@ -57,13 +57,13 @@ fn cli() -> clap::Command {
         )
         .subcommand(
             Command::new("print")
-                .about("Print the certificate information of a PE file.")
+                .about("Print the certificate information of a PE file")
                 .args(&[
                     arg!([FILE])
                         .value_parser(value_parser!(PathBuf))
                         .required(true),
-                    arg!(--"signer-info" "Print the signer info of a PE file."),
-                    arg!(-a --all "Include nested signature."),
+                    arg!(--"signer-info" "Print the signer info of a PE file"),
+                    arg!(-a --all "Include nested signature"),
                 ]),
         )
 }
