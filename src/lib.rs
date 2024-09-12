@@ -268,7 +268,13 @@ impl<'a> PeSign {
         section_ranges.sort_unstable_by_key(|v| v.start);
 
         for section_range in section_ranges {
-            let section_data = &image[section_range];
+            let mut section_data = &image[section_range.clone()];
+            // skip malformed header when SizeOfHeader value > real size of header
+            if header_end_offset > section_range.start && header_end_offset < section_range.end {
+                section_data = &image[header_end_offset..section_range.end];
+            } else if header_end_offset > section_range.start {
+                continue;
+            }
             hasher.update(section_data);
             num_of_bytes_hashed += section_data.len();
         }
