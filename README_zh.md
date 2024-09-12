@@ -33,7 +33,7 @@
 ### 使用说明
 
 ```powershell
-pe-sign (0.1.3) - REinject
+pe-sign (0.1.4) - REinject
 A tool for parsing and verifing PE file signatures
 
 Repository: https://github.com/0xlane/pe-sign
