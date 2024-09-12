@@ -493,6 +493,8 @@ impl Display for Attribute {
 
 #[cfg(test)]
 mod tests {
+    use std::time::UNIX_EPOCH;
+
     use cms::cert::x509::der::SliceReader;
     use der::{DecodePem, EncodePem};
 
@@ -562,8 +564,9 @@ mod tests {
         assert_eq!(
             pesign
                 .signed_data
-                .signer_info
                 .get_signing_time()
+                .unwrap()
+                .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
             1459215302
@@ -583,8 +586,9 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .signed_data
-                .signer_info
                 .get_signing_time()
+                .unwrap()
+                .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
             1459215303
@@ -599,8 +603,9 @@ mod tests {
         assert_eq!(
             pesign
                 .signed_data
-                .signer_info
                 .get_signing_time()
+                .unwrap()
+                .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
             1717347664
@@ -651,8 +656,11 @@ mod tests {
         let bytes = include_bytes!("./examples/dotnet.cer");
         let pesign = PeSign::from_certificate_table_buf(bytes).unwrap();
 
-        let signing_time = pesign.signed_data.signer_info.get_signing_time().unwrap();
+        let signing_time = pesign.signed_data.get_signing_time().unwrap();
 
-        assert_eq!(signing_time.as_secs(), 1715980852);
+        assert_eq!(
+            signing_time.duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            1715980852
+        );
     }
 }

@@ -1,6 +1,6 @@
 use std::{
     fmt::{Debug, Display},
-    time::Duration,
+    time::SystemTime,
 };
 
 use cms::{attr::SigningTime, content_info::ContentInfo};
@@ -120,8 +120,10 @@ impl Display for SignerInfo {
                 self.unsigned_attrs.clone().unwrap().to_string().indent(8)
             )?;
         }
-        self.get_countersigner_info().unwrap();
-        if let Some(cs_info) = self.get_countersigner_info().map_err(|_| std::fmt::Error)? {
+        if let Some(cs_info) = self.get_countersigner_info().map_err(|e| {
+            eprintln!("{:?}", e);
+            std::fmt::Error
+        })? {
             writeln!(f, "{}", "Countersigner Info:".indent(4))?;
             writeln!(f, "{}", cs_info.to_string().indent(8))?;
         }
@@ -347,78 +349,6 @@ impl SignerInfo {
             },
         }
     }
-
-    ///Get signing time.
-    pub fn get_signing_time(self: &Self) -> Result<Duration, PeSignError> {
-        fn get_signing_time_from_attr(
-            signed_attrs: &Option<Attributes>,
-        ) -> Result<Option<Duration>, PeSignError> {
-            if let Some(signing_time_attr) = match signed_attrs {
-                Some(signed_attrs) => signed_attrs
-                    .0
-                    .iter()
-                    .find(|v| v.oid == "1.2.840.113549.1.9.5"), // signingTime attr
-                None => None,
-            } {
-                let attr_value = signing_time_attr.values.concat();
-                match SigningTime::from_der(&attr_value)
-                    .map_app_err(PeSignErrorKind::InvalidSigningTime)?
-                {
-                    x509_cert::time::Time::UtcTime(time) => Ok(Some(time.to_unix_duration())),
-                    x509_cert::time::Time::GeneralTime(time) => Ok(Some(time.to_unix_duration())),
-                }
-            } else {
-                Ok(None)
-            }
-        }
-
-        let signing_time = match get_signing_time_from_attr(&self.signed_attrs)? {
-            Some(signing_time) => Some(signing_time),
-            None => {
-                match self.get_countersignature()? {
-                    Some(cs_signer_info) => {
-                        match get_signing_time_from_attr(&cs_signer_info.signed_attrs)? {
-                            Some(signing_time) => Some(signing_time),
-                            None => None,
-                        }
-                    }
-                    None => {
-                        match self.get_ms_tst_signature()? {
-                            Some(ms_tst_signature) => match get_signing_time_from_attr(
-                                &ms_tst_signature.signer_info.signed_attrs,
-                            )? {
-                                Some(signing_time) => Some(signing_time),
-                                None => {
-                                    match ms_tst_signature.encap_content_info.econtent_type.as_str()
-                                    {
-                                        "1.2.840.113549.1.9.16.1.4" => {
-                                            // id-smime-ct-TSTInfo
-                                            let x = TSTInfo::from_der(
-                                                &ms_tst_signature.encap_content_info.econtent_value,
-                                            )
-                                            .map_app_err(PeSignErrorKind::InvalidTSTInfo)?;
-                                            Some(
-                                                x.get_gen_time()
-                                                    .map_app_err(PeSignErrorKind::InvalidTSTInfo)?
-                                                    .to_unix_duration(),
-                                            )
-                                        }
-                                        _ => None,
-                                    }
-                                }
-                            },
-                            None => None,
-                        }
-                    }
-                }
-            }
-        };
-
-        Ok(signing_time.ok_or(PeSignError {
-            kind: PeSignErrorKind::NoFoundSigningTime,
-            message: "".to_owned(),
-        })?)
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -605,5 +535,71 @@ impl SignedData {
             &self.encap_content_info.econtent_value,
             option,
         )
+    }
+
+    ///Get signing time.
+    pub fn get_signing_time(self: &Self) -> Result<SystemTime, PeSignError> {
+        fn get_signing_time_from_attr(
+            signed_attrs: &Option<Attributes>,
+        ) -> Result<Option<SystemTime>, PeSignError> {
+            if let Some(signing_time_attr) = match signed_attrs {
+                Some(signed_attrs) => signed_attrs
+                    .0
+                    .iter()
+                    .find(|v| v.oid == "1.2.840.113549.1.9.5"), // signingTime attr
+                None => None,
+            } {
+                let attr_value = signing_time_attr.values.concat();
+                match SigningTime::from_der(&attr_value)
+                    .map_app_err(PeSignErrorKind::InvalidSigningTime)?
+                {
+                    x509_cert::time::Time::UtcTime(time) => Ok(Some(time.to_system_time())),
+                    x509_cert::time::Time::GeneralTime(time) => Ok(Some(time.to_system_time())),
+                }
+            } else {
+                Ok(None)
+            }
+        }
+
+        let signing_time = match get_signing_time_from_attr(&self.signer_info.signed_attrs)? {
+            Some(signing_time) => Some(signing_time),
+            None => {
+                match self.signer_info.get_countersignature()? {
+                    Some(cs_signer_info) => {
+                        match get_signing_time_from_attr(&cs_signer_info.signed_attrs)? {
+                            Some(signing_time) => Some(signing_time),
+                            None => None,
+                        }
+                    }
+                    None => {
+                        match self.encap_content_info.econtent_type.as_str() {
+                            // self is ms_tst_signature
+                            "1.2.840.113549.1.9.16.1.4" => {
+                                // id-smime-ct-TSTInfo
+                                let x = TSTInfo::from_der(&self.encap_content_info.econtent_value)
+                                    .map_app_err(PeSignErrorKind::InvalidTSTInfo)?;
+                                Some(
+                                    x.get_gen_time()
+                                        .map_app_err(PeSignErrorKind::InvalidTSTInfo)?
+                                        .to_system_time(),
+                                )
+                            }
+                            // countersignature
+                            _ => match self.signer_info.get_ms_tst_signature()? {
+                                Some(ms_tst_signature) => {
+                                    Some(ms_tst_signature.get_signing_time()?)
+                                }
+                                None => None,
+                            },
+                        }
+                    }
+                }
+            }
+        };
+
+        Ok(signing_time.ok_or(PeSignError {
+            kind: PeSignErrorKind::NoFoundSigningTime,
+            message: "".to_owned(),
+        })?)
     }
 }
