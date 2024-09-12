@@ -49,7 +49,7 @@ impl CertificateChainBuilder {
             kind: crate::errors::PeSignErrorKind::WrongCertChainBuildParam,
             message: "ca cert list is none".to_owned(),
         })?;
-        let cert_list = self.cert_list.take().ok_or(PeSignError {
+        let mut cert_list = self.cert_list.take().ok_or(PeSignError {
             kind: crate::errors::PeSignErrorKind::WrongCertChainBuildParam,
             message: "cert list is none".to_owned(),
         })?;
@@ -66,7 +66,7 @@ impl CertificateChainBuilder {
                     .iter()
                     .find(|v| v.issuer == signer_issuer && v.serial_number == signer_sn)
                 {
-                    Some(signer_cert) => signer_cert,
+                    Some(signer_cert) => signer_cert.clone(),
                     None => {
                         return Err(PeSignError {
                             kind: PeSignErrorKind::UnknownSigner,
@@ -98,7 +98,7 @@ impl CertificateChainBuilder {
                     }
                     None => false,
                 }) {
-                    Some(signer_cert) => signer_cert,
+                    Some(signer_cert) => signer_cert.clone(),
                     None => {
                         return Err(PeSignError {
                             kind: PeSignErrorKind::UnknownSigner,
@@ -109,8 +109,21 @@ impl CertificateChainBuilder {
             }
         };
 
+        // Use trusted CA certificates to replace the certificates of the same subject and serial number in certificate list.
+        for cert in cert_list.as_mut_slice() {
+            match trusted_ca_certs
+                .iter()
+                .find(|vv| vv.subject == cert.subject && vv.serial_number == cert.serial_number)
+            {
+                Some(trusted_cert) => {
+                    *cert = trusted_cert.clone();
+                }
+                None => {}
+            }
+        }
+
         // 根据提供的证书列表构建证书链
-        let mut cert_chain = Self::build_chain(&cert_list, signer_cert);
+        let mut cert_chain = Self::build_chain(&cert_list, &signer_cert);
         cert_chain
             .extend(Self::build_chain(&trusted_ca_certs, cert_chain.last().unwrap())[1..].to_vec());
 
@@ -199,14 +212,13 @@ impl CertificateChain {
             return Ok(false);
         }
 
-        // 如果顶级证书不是来自于可信CA，直接判定为不可信
-        let root_cert = self.cert_chain.last().unwrap();
-        if self
-            .trusted_ca_certs
-            .iter()
-            .find(|v| *v == root_cert)
-            .is_none()
-        {
+        // Check chain if include trusted ca certificate.
+        if !self.cert_chain.iter().any(|vv| {
+            self.trusted_ca_certs
+                .iter()
+                .find(|vvv| *vvv == vv)
+                .is_some()
+        }) {
             return Ok(false);
         }
 
