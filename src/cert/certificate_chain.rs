@@ -109,11 +109,11 @@ impl CertificateChainBuilder {
             }
         };
 
-        // Use trusted CA certificates to replace the certificates of the same subject and serial number in certificate list.
+        // Use trusted CA certificates to replace the certificates of the same subject in certificate list.
         for cert in cert_list.as_mut_slice() {
             match trusted_ca_certs
                 .iter()
-                .find(|vv| vv.subject == cert.subject && vv.serial_number == cert.serial_number)
+                .find(|vv| vv.subject == cert.subject)
             {
                 Some(trusted_cert) => {
                     *cert = trusted_cert.clone();
