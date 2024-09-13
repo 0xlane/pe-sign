@@ -268,24 +268,23 @@ impl<'a> PeSign {
         section_ranges.sort_unstable_by_key(|v| v.start);
 
         for section_range in section_ranges {
-            let mut section_data = &image[section_range.clone()];
-            // skip malformed header when SizeOfHeader value > real size of header
-            if header_end_offset > section_range.start && header_end_offset < section_range.end {
-                section_data = &image[header_end_offset..section_range.end];
-            } else if header_end_offset > section_range.start {
-                continue;
-            }
+            // Passing through the overlap.
+            let section_data = &image[section_range.start.max(num_of_bytes_hashed)
+                ..section_range.end.max(num_of_bytes_hashed)];
             hasher.update(section_data);
             num_of_bytes_hashed += section_data.len();
         }
 
-        // Security data size
-        let num_of_security_data = sec_directory_ref.size as usize;
+        let offset_of_security_data = sec_directory_ref.virtual_address.0 as usize;
 
         // hash 额外内容
         let extra_start = num_of_bytes_hashed;
-        let extra_size = file_size - num_of_security_data - num_of_bytes_hashed;
-        let extra_end = extra_start + extra_size;
+        let extra_end = if offset_of_security_data != 0 {
+            // Exclude Security data.
+            offset_of_security_data
+        } else {
+            file_size
+        };
         hasher.update(&image[extra_start..extra_end]);
 
         let result = hasher.finalize();
