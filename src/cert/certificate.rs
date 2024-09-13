@@ -3,9 +3,9 @@ use std::{fmt::Display, io::Read};
 use chrono::{DateTime, Local, Utc};
 use der::{
     oid::db::rfc5912::{
-        ID_SHA_1, ID_SHA_224, ID_SHA_256, ID_SHA_384, ID_SHA_512, RSA_ENCRYPTION,
-        SHA_1_WITH_RSA_ENCRYPTION, SHA_224_WITH_RSA_ENCRYPTION, SHA_256_WITH_RSA_ENCRYPTION,
-        SHA_384_WITH_RSA_ENCRYPTION, SHA_512_WITH_RSA_ENCRYPTION,
+        ID_SHA_1, ID_SHA_224, ID_SHA_256, ID_SHA_384, ID_SHA_512, MD_5_WITH_RSA_ENCRYPTION,
+        RSA_ENCRYPTION, SHA_1_WITH_RSA_ENCRYPTION, SHA_224_WITH_RSA_ENCRYPTION,
+        SHA_256_WITH_RSA_ENCRYPTION, SHA_384_WITH_RSA_ENCRYPTION, SHA_512_WITH_RSA_ENCRYPTION,
     },
     Decode, Encode,
 };
@@ -250,6 +250,7 @@ pub enum Algorithm {
     Sha512,
     Md5,
     RSA,
+    Md5WithRSA,
     Sha1WithRSA,
     Sha224WithRSA,
     Sha256WithRSA,
@@ -281,6 +282,7 @@ impl From<x509_cert::spki::AlgorithmIdentifierOwned> for Algorithm {
             ID_SHA_384 => Self::Sha384,
             ID_SHA_512 => Self::Sha512,
             RSA_ENCRYPTION => Self::RSA,
+            MD_5_WITH_RSA_ENCRYPTION => Self::Md5WithRSA,
             SHA_1_WITH_RSA_ENCRYPTION => Self::Sha1WithRSA,
             SHA_224_WITH_RSA_ENCRYPTION => Self::Sha224WithRSA,
             SHA_256_WITH_RSA_ENCRYPTION => Self::Sha256WithRSA,
