@@ -41,6 +41,7 @@ fn cli() -> clap::Command {
                     arg!(--"no-check-time" "Ignore certificate validity time"),
                     arg!(--"ca-file" <FILE> "Trusted certificates file")
                         .value_parser(value_parser!(PathBuf)),
+                    arg!(--embed "Verify embedded certificate"),
                 ]),
         )
         .subcommand(
@@ -123,29 +124,40 @@ fn main() -> Result<(), Box<dyn Error>> {
             let file = sub_matches.get_one::<PathBuf>("FILE").unwrap();
             let check_time = !sub_matches.get_flag("no-check-time");
             let trusted_ca_pem_file = sub_matches.get_one::<PathBuf>("ca-file");
+            let embedded = sub_matches.get_flag("embed");
 
             let trusted_ca_pem = match trusted_ca_pem_file {
                 Some(trusted_ca_pem_file) => Some(std::fs::read_to_string(trusted_ca_pem_file)?),
                 None => None,
             };
 
-            match PeSign::from_pe_path(file)? {
-                Some(pesign) => {
-                    println!(
-                        "{:?}",
-                        pesign.verify_pe_path(
-                            file,
-                            &VerifyOption {
-                                check_time,
-                                trusted_ca_pem
-                            }
-                        )?
-                    );
-                }
+            let pesign = match PeSign::from_pe_path(file)? {
+                Some(pesign) => match embedded {
+                    true => match pesign.signed_data.signer_info.get_nested_signature()? {
+                        Some(nested_pesign) => nested_pesign,
+                        None => {
+                            println!("The file is no nested signature!!");
+                            return Ok(());
+                        }
+                    },
+                    false => pesign,
+                },
                 None => {
                     println!("The file is no signed!!");
+                    return Ok(());
                 }
-            }
+            };
+
+            println!(
+                "{:?}",
+                pesign.verify_pe_path(
+                    file,
+                    &VerifyOption {
+                        check_time,
+                        trusted_ca_pem
+                    }
+                )?
+            );
 
             Ok(())
         }
