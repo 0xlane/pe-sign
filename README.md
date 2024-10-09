@@ -33,7 +33,7 @@ Alternatively, if you have `Cargo` installed, you can easily install it by runni
 ### Usage
 
 ```powershell
-pe-sign (0.1.5) - REinject
+pe-sign (0.1.6) - REinject
 A tool for parsing and verifing PE file signatures
 
 Repository: https://github.com/0xlane/pe-sign
@@ -222,6 +222,7 @@ Arguments:
 Options:
       --no-check-time   Ignore certificate validity time
       --ca-file <FILE>  Trusted certificates file
+      --embed           Verify embedded certificate
   -h, --help            Print help
 ```
 
