@@ -33,7 +33,7 @@ Alternatively, if you have `Cargo` installed, you can easily install it by runni
 ### Usage
 
 ```powershell
-pe-sign (0.1.6) - REinject
+pe-sign (0.1.7) - REinject
 A tool for parsing and verifing PE file signatures
 
 Repository: https://github.com/0xlane/pe-sign

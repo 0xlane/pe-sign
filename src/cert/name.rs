@@ -82,7 +82,6 @@ impl From<x509_cert::name::RelativeDistinguishedName> for RelativeDistinguishedN
                 .0
                 .iter()
                 .map(|tv| {
-                    let mut ss;
                     let val = match tv.value.tag() {
                         Tag::PrintableString => PrintableStringRef::try_from(&tv.value)
                             .ok()
@@ -119,31 +118,46 @@ impl From<x509_cert::name::RelativeDistinguishedName> for RelativeDistinguishedN
                         best_match
                     };
 
-                    if let (Some(key), Some(val)) = (key, val) {
-                        ss = format!("{}=", key.to_ascii_uppercase());
+                    let key_ss = match key {
+                        Some(key) => key.to_ascii_uppercase(),
+                        None => tv.oid.to_string(),
+                    };
 
-                        let mut iter = val.char_indices().peekable();
-                        while let Some((i, c)) = iter.next() {
-                            match c {
-                                '#' if i == 0 => ss.push_str("\\#"),
-                                ' ' if i == 0 || iter.peek().is_none() => ss.push_str("\\ "),
-                                '"' | '+' | ',' | ';' | '<' | '>' | '\\' => {
-                                    ss = format!("{}\\{}", ss, c)
+                    let val_ss = match val {
+                        Some(val) => {
+                            let mut val_ss = String::new();
+                            let mut iter = val.char_indices().peekable();
+                            while let Some((i, c)) = iter.next() {
+                                match c {
+                                    '#' if i == 0 => val_ss.push_str("\\#"),
+                                    ' ' if i == 0 || iter.peek().is_none() => {
+                                        val_ss.push_str("\\ ")
+                                    }
+                                    '"' | '+' | ',' | ';' | '<' | '>' | '\\' => {
+                                        val_ss = val_ss + &format!("\\{}", c);
+                                    }
+                                    '\x00'..='\x1f' | '\x7f' => {
+                                        val_ss = val_ss + &format!("\\{:02x}", c as u8)
+                                    }
+                                    _ => val_ss.push(c),
                                 }
-                                '\x00'..='\x1f' | '\x7f' => ss = format!("{}\\{:02x}", ss, c as u8),
-                                _ => ss.push(c),
                             }
-                        }
-                    } else {
-                        let value = tv.value.to_der().unwrap();
 
-                        ss = format!("{}=#", tv.oid);
-                        for c in value {
-                            ss = format!("{}{:02x}", ss, c);
+                            val_ss
                         }
-                    }
+                        None => {
+                            let mut val_ss = "#".to_owned();
+                            let value = tv.value.to_der().unwrap();
 
-                    ss
+                            for c in value {
+                                val_ss = val_ss + &format!("{:02x}", c);
+                            }
+
+                            val_ss
+                        }
+                    };
+
+                    format!("{}={}", key_ss, val_ss)
                 })
                 .collect(),
         )
@@ -182,5 +196,17 @@ mod tests {
         let rdn = RelativeDistinguishedName::from(der_rdn);
 
         assert_eq!(rdn.to_string(), "CN=晓羽");
+    }
+
+    #[test]
+    fn test_unkown_rdn_oid() {
+        let der_rdn = x509_cert::name::RelativeDistinguishedName::from_der(
+            b"\x31\x13\x30\x11\x06\x0b\x2b\x06\x01\x04\x01\x82\x37\x3c\x02\x01\x03\x13\x02\x43\x4e",
+        )
+        .unwrap();
+
+        let rdn = RelativeDistinguishedName::from(der_rdn);
+
+        assert_eq!(rdn.to_string(), "1.3.6.1.4.1.311.60.2.1.3=CN");
     }
 }
