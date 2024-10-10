@@ -1,9 +1,11 @@
-use std::ops::Deref;
+use std::{ops::Deref, time::Duration};
 
 use chrono::Utc;
+use der::Decode;
 use rsa::pkcs1::DecodeRsaPublicKey;
 
 use crate::{
+    cert::ext::name::GeneralName,
     errors::{PeSignError, PeSignErrorKind, PeSignResult},
     signed_data::SignerIdentifier,
     utils::{to_hex_str, DisplayBytes},
@@ -49,7 +51,7 @@ impl CertificateChainBuilder {
             kind: crate::errors::PeSignErrorKind::WrongCertChainBuildParam,
             message: "ca cert list is none".to_owned(),
         })?;
-        let mut cert_list = self.cert_list.take().ok_or(PeSignError {
+        let cert_list = self.cert_list.take().ok_or(PeSignError {
             kind: crate::errors::PeSignErrorKind::WrongCertChainBuildParam,
             message: "cert list is none".to_owned(),
         })?;
@@ -109,8 +111,13 @@ impl CertificateChainBuilder {
             }
         };
 
+        // Build a certificate chain based on the provided list of certificates.
+        let mut new_cert_list = cert_list;
+        new_cert_list.extend(trusted_ca_certs.clone());
+        let mut cert_chain = Self::build_chain(&new_cert_list, &signer_cert);
+
         // Use trusted CA certificates to replace the certificates of the same subject in certificate list.
-        for cert in cert_list.as_mut_slice() {
+        for cert in cert_chain.as_mut_slice() {
             match trusted_ca_certs
                 .iter()
                 .find(|vv| vv.subject == cert.subject)
@@ -122,11 +129,6 @@ impl CertificateChainBuilder {
             }
         }
 
-        // 根据提供的证书列表构建证书链
-        let mut cert_chain = Self::build_chain(&cert_list, &signer_cert);
-        cert_chain
-            .extend(Self::build_chain(&trusted_ca_certs, cert_chain.last().unwrap())[1..].to_vec());
-
         Ok(CertificateChain {
             trusted_ca_certs,
             cert_chain,
@@ -136,16 +138,60 @@ impl CertificateChainBuilder {
     /// Build a certificate chain from the provided certificate list using the signer certificate.
     fn build_chain(cert_list: &[Certificate], signer_cert: &Certificate) -> Vec<Certificate> {
         let mut cert_chain = vec![signer_cert.clone()];
-        match signer_cert.is_selfsigned() {
-            true => cert_chain,
-            false => match cert_list.iter().find(|v| v.subject == signer_cert.issuer) {
-                Some(issuer_cert) => {
-                    cert_chain.extend(Self::build_chain(cert_list, issuer_cert));
-                    cert_chain
+        loop {
+            let signer_cert = cert_chain.last().unwrap();
+            match signer_cert.is_selfsigned() {
+                true => break,
+                false => {
+                    match cert_list.iter().find(|v| v.subject == signer_cert.issuer) {
+                        Some(issuer_cert) => cert_chain.push(issuer_cert.clone()),
+                        None => {
+                            // Download issuer cert from Authority Information Access
+                            if let Ok(client) = reqwest::blocking::Client::builder()
+                                .timeout(Duration::from_secs(5))
+                                .build()
+                            {
+                                let mut dl_cert_url = None;
+                                if let Some(exts) = &signer_cert.extensions {
+                                    for ext in &exts.0 {
+                                        if let Extension::AuthorityInfoAccess(aia) = ext {
+                                            for aia_desc in &aia.0 {
+                                                // CA Issuers
+                                                if aia_desc.access_method == "1.3.6.1.5.5.7.48.2" {
+                                                    dl_cert_url = match &aia_desc.access_location {
+                                                        GeneralName::UniformResourceIdentifier(
+                                                            uri,
+                                                        ) => Some(uri),
+                                                        _ => None,
+                                                    }
+                                                } else {
+                                                    continue;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if let Some(url) = dl_cert_url {
+                                    if let Ok(body) = client.get(url).send().and_then(|v| v.bytes())
+                                    {
+                                        if let Ok(dl_cert) = Certificate::from_der(&body) {
+                                            if dl_cert.subject == signer_cert.issuer {
+                                                cert_chain.push(dl_cert);
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
                 }
-                None => cert_chain,
-            },
+            }
         }
+
+        cert_chain
     }
 }
 
