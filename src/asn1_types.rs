@@ -58,7 +58,7 @@ pub struct SpcIndirectDataContent {
 /// This structure treats the time field as an Any, which at least allows the message digest to be
 /// compared.
 ///
-/// References from https://github.com/carl-wallace/tpm_cab_verify/blob/main/src/asn1.rs#L39C1-L48C14
+/// References from `<https://github.com/carl-wallace/tpm_cab_verify/blob/main/src/asn1.rs#L39C1-L48C14>`.
 #[derive(Clone, Debug, Eq, PartialEq, Sequence)]
 pub struct TSTInfo {
     pub version: TSTVersion,
@@ -112,7 +112,7 @@ pub struct MessageImprint {
 /// For some bizarre reason, the SignedData used for the timestamp includes v1 attribute certs (!!!),
 /// which are marked as obsolete in CMS and are not supported in the cms crate.
 ///
-/// References from https://github.com/carl-wallace/tpm_cab_verify/blob/main/src/asn1.rs#L23.
+/// References from `<https://github.com/carl-wallace/tpm_cab_verify/blob/main/src/asn1.rs#L23>`.
 #[derive(Clone, Debug, Eq, PartialEq, Sequence)]
 #[allow(missing_docs)]
 pub(crate) struct SignedData {

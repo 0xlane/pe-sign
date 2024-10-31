@@ -6,14 +6,14 @@ use std::{
     path::PathBuf,
 };
 
-use pesign::{PeSign, VerifyOption};
+use pesign::{PeSign, VerifyOption, PE};
 use pretty_hex::pretty_hex_write;
 
 fn cli() -> clap::Command {
     use clap::{arg, value_parser, Command};
 
     Command::new("pe-sign")
-        .version("0.1.8")
+        .version("0.1.9")
         .about("A tool for parsing and verifing PE file signatures\n\nRepository: https://github.com/0xlane/pe-sign\n")
         .author("REinject")
         .help_template("{name} ({version}) - {author}\n{about}\n{all-args}")
@@ -176,7 +176,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             println!(
                 "{}",
-                PeSign::calc_authenticode_from_pe_path(&file, &algorithm)?
+                PE::from_path(file)
+                    .unwrap()
+                    .calc_authenticode(algorithm)
+                    .unwrap()
             );
 
             Ok(())

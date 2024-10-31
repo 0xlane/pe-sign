@@ -28,7 +28,7 @@
 //! ```
 //!
 
-use std::{fmt::Display, ops::Range, path::Path};
+use std::{fmt::Display, path::Path};
 
 use asn1_types::SpcIndirectDataContent;
 use cert::Algorithm;
@@ -40,9 +40,10 @@ use cms::{
 };
 use der::{asn1::SetOfVec, Encode, EncodePem};
 use errors::{PeSignError, PeSignErrorKind, PeSignResult};
-use exe::{Buffer, ImageDataDirectory, ImageDirectoryEntry, NTHeaders, VecPE, PE};
 use signed_data::SignedData;
 use utils::{to_hex_str, DisplayBytes, IndentString, TryVecInto};
+
+mod pe;
 
 pub mod asn1_types;
 pub mod cert;
@@ -50,6 +51,7 @@ pub mod errors;
 pub mod signed_data;
 pub mod utils;
 pub use der;
+pub use pe::*;
 
 /// Obtaining a PE file's signature
 ///
@@ -149,147 +151,24 @@ impl<'a> PeSign {
 
     /// Extract signature information from a disk file.
     pub fn from_pe_path<P: AsRef<Path>>(filename: P) -> Result<Option<Self>, PeSignError> {
-        let image = VecPE::from_disk_file(filename).map_app_err(PeSignErrorKind::IoError)?;
+        let mut image = PE::from_path(filename)?;
 
-        Self::from_vecpe(&image)
+        Self::from_pe_image(&mut image)
     }
 
     /// Extract signature information from a memory pe data.
     pub fn from_pe_data(bin: &[u8]) -> Result<Option<Self>, PeSignError> {
-        let image = VecPE::from_disk_data(bin);
+        let mut image = PE::from_bytes(bin)?;
 
-        Self::from_vecpe(&image)
+        Self::from_pe_image(&mut image)
     }
 
-    /// Extract signature information from [`VecPE`].
-    pub fn from_vecpe(image: &VecPE) -> Result<Option<Self>, PeSignError> {
-        // va = 0 表示无签名
-        let security_directory = image
-            .get_data_directory(ImageDirectoryEntry::Security)
-            .map_app_err(PeSignErrorKind::InvalidPeFile)?;
-        if security_directory.virtual_address.0 == 0x00 {
-            return Ok(None);
+    /// Extract signature information from [`PE`].
+    pub fn from_pe_image(image: &mut PE) -> Result<Option<Self>, PeSignError> {
+        match image.get_security_data()? {
+            Some(pkcs7_bytes) => Ok(Some(Self::from_certificate_table_buf(&pkcs7_bytes)?)),
+            None => Ok(None),
         }
-
-        let signature_data =
-            Buffer::offset_to_ptr(image, security_directory.virtual_address.into())
-                .map_app_err(PeSignErrorKind::InvalidPeFile)?; // security_data_directory rva is equivalent to file offset
-
-        let win_certificate =
-            unsafe { std::slice::from_raw_parts(signature_data, security_directory.size as usize) };
-        let pkcs7 = &win_certificate[8..]; // _WIN_CERTIFICATE->bCertificate
-
-        Ok(Some(Self::from_certificate_table_buf(&pkcs7)?))
-    }
-
-    /// Calculate authenticode from a disk file.
-    pub fn calc_authenticode_from_pe_path<P: AsRef<Path>>(
-        filename: P,
-        algorithm: &Algorithm,
-    ) -> Result<String, PeSignError> {
-        let image = VecPE::from_disk_file(filename).map_app_err(PeSignErrorKind::IoError)?;
-
-        Self::calc_authenticode_from_vecpe(&image, algorithm)
-    }
-
-    /// Calculate authenticode from a memory pe data.
-    pub fn calc_authenticode_from_pe_data(
-        bin: &[u8],
-        algorithm: &Algorithm,
-    ) -> Result<String, PeSignError> {
-        let image = VecPE::from_disk_data(bin);
-
-        Self::calc_authenticode_from_vecpe(&image, algorithm)
-    }
-
-    /// Calculate authenticode from [`VecPE`].
-    pub fn calc_authenticode_from_vecpe(
-        image: &VecPE,
-        algorithm: &Algorithm,
-    ) -> Result<String, PeSignError> {
-        let mut hasher = algorithm.new_digest()?;
-
-        // SizeOfHeaders > dosHeader + ntHeader + dataDirectory + sectionTable
-        let (checknum_ref, size_of_headers) = match image
-            .get_valid_nt_headers()
-            .map_app_err(PeSignErrorKind::InvalidPeFile)?
-        {
-            NTHeaders::NTHeaders32(h32) => (
-                &h32.optional_header.checksum,
-                h32.optional_header.size_of_headers as usize,
-            ),
-            NTHeaders::NTHeaders64(h64) => (
-                &h64.optional_header.checksum,
-                h64.optional_header.size_of_headers as usize,
-            ),
-        };
-        let checknum_offset = image
-            .ref_to_offset(checknum_ref)
-            .map_app_err(PeSignErrorKind::InvalidPeFile)?;
-        let before_checknum_offset = checknum_offset;
-        let after_checknum_offset = checknum_offset
-            .checked_add(std::mem::size_of::<u32>())
-            .ok_or(PeSignError {
-                kind: PeSignErrorKind::InvalidPeFile,
-                message: "overflow".to_owned(),
-            })?;
-        let sec_directory_ref = image
-            .get_data_directory(ImageDirectoryEntry::Security)
-            .map_app_err(PeSignErrorKind::InvalidPeFile)?;
-        let sec_directory_offset = image
-            .ref_to_offset(sec_directory_ref)
-            .map_app_err(PeSignErrorKind::InvalidPeFile)?;
-        let before_sec_directory_offset = sec_directory_offset;
-        let after_sec_directory_offset = sec_directory_offset
-            .checked_add(std::mem::size_of::<ImageDataDirectory>())
-            .ok_or(PeSignError {
-                kind: PeSignErrorKind::InvalidPeFile,
-                message: "overflow".to_owned(),
-            })?;
-        let header_end_offset = size_of_headers;
-        let file_size = image.len();
-        let mut num_of_bytes_hashed: usize;
-
-        hasher.update(&image[..before_checknum_offset]);
-        hasher.update(&image[after_checknum_offset..before_sec_directory_offset]);
-        hasher.update(&image[after_sec_directory_offset..header_end_offset]);
-        num_of_bytes_hashed = header_end_offset;
-
-        // 排序 section 后 hash
-        let mut section_ranges = image
-            .get_section_table()
-            .map_app_err(PeSignErrorKind::InvalidPeFile)?
-            .iter()
-            .map(|v| {
-                v.pointer_to_raw_data.0 as usize
-                    ..v.pointer_to_raw_data.0 as usize + v.size_of_raw_data as usize
-            })
-            .collect::<Vec<Range<usize>>>();
-        section_ranges.sort_unstable_by_key(|v| v.start);
-
-        for section_range in section_ranges {
-            // Passing through the overlap.
-            let section_data = &image[section_range.start.max(num_of_bytes_hashed)
-                ..section_range.end.max(num_of_bytes_hashed)];
-            hasher.update(section_data);
-            num_of_bytes_hashed += section_data.len();
-        }
-
-        let offset_of_security_data = sec_directory_ref.virtual_address.0 as usize;
-
-        // hash 额外内容
-        let extra_start = num_of_bytes_hashed;
-        let extra_end = if offset_of_security_data != 0 {
-            // Exclude Security data.
-            offset_of_security_data
-        } else {
-            file_size
-        };
-        hasher.update(&image[extra_start..extra_end]);
-
-        let result = hasher.finalize();
-
-        Ok(to_hex_str(&result))
     }
 
     /// Verify the validity of the certificate.
@@ -303,9 +182,9 @@ impl<'a> PeSign {
         filename: P,
         option: &VerifyOption,
     ) -> Result<PeSignStatus, PeSignError> {
-        let image = VecPE::from_disk_file(filename).map_app_err(PeSignErrorKind::IoError)?;
+        let mut image = PE::from_path(filename)?;
 
-        self.verify_vecpe(&image, option)
+        self.verify_pe_image(&mut image, option)
     }
 
     /// Verify the validity of the certificate.
@@ -314,19 +193,18 @@ impl<'a> PeSign {
         bin: &[u8],
         option: &VerifyOption,
     ) -> Result<PeSignStatus, PeSignError> {
-        let image = VecPE::from_disk_data(bin);
+        let mut image = PE::from_bytes(bin)?;
 
-        self.verify_vecpe(&image, option)
+        self.verify_pe_image(&mut image, option)
     }
 
     /// Verify the validity of the certificate.
-    pub fn verify_vecpe(
+    pub fn verify_pe_image(
         self: &Self,
-        image: &VecPE,
+        image: &mut PE,
         option: &VerifyOption,
     ) -> Result<PeSignStatus, PeSignError> {
-        let authenticode =
-            Self::calc_authenticode_from_vecpe(image, &self.authenticode_digest_algorithm)?;
+        let authenticode = image.calc_authenticode(self.authenticode_digest_algorithm.clone())?;
 
         if authenticode != self.authenticode_digest {
             Ok(PeSignStatus::Invalid)

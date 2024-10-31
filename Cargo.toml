@@ -1,6 +1,6 @@
 [package]
 name = "pe-sign"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2021"
 authors = ["REinject"]
 homepage = "https://github.com/0xlane/pe-sign"
@@ -38,7 +38,6 @@ pretty-hex = { version = "0.4.1", optional = true }
 cms = { version = "0.2.3", features = ["std"] }
 der = { version = "0.7.9", features = ["derive"] }
 digest = { version = "0.10.7", features = ["oid"] }
-exe = "0.5.6"
 pem-rfc7468 = { version = "1.0.0-rc.1", features = ["std"] }
 rsa = "0.9.6"
 sha1 = { version = "0.10.6", features = ["oid"] }
